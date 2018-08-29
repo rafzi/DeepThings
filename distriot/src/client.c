@@ -1,11 +1,19 @@
 #include "client.h"
 
-device_ctxt* init_client(uint32_t cli_id){
-   device_ctxt* ctxt = (device_ctxt*)malloc(sizeof(device_ctxt)); 
+device_ctxt* init_client(uint32_t cli_id, int frame_num){
+   device_ctxt* ctxt = (device_ctxt*)malloc(sizeof(device_ctxt));
 /*Queues used in edge device*/
    ctxt->task_queue = new_queue(MAX_QUEUE_SIZE);
-   ctxt->result_queue = new_queue(MAX_QUEUE_SIZE); 
+   ctxt->result_queue = new_queue(MAX_QUEUE_SIZE);
    ctxt->this_cli_id = cli_id;
+
+   // Result aggregation.
+   ctxt->ready_pool = new_queue(MAX_QUEUE_SIZE);
+   ctxt->results_pool = malloc(frame_num * sizeof(*ctxt->results_pool));
+   for (int i = 0; i < frame_num; i++)
+   {
+      ctxt->results_pool[i] = new_queue(MAX_QUEUE_SIZE);
+   }
 
    return ctxt;
 }
@@ -31,7 +39,7 @@ static void process_task(blob* temp, device_ctxt* ctxt){
    result = new_blob_and_copy_data(temp->id, 20, (uint8_t*)data);
    copy_blob_meta(result, temp);
    sys_sleep(1000);
-   enqueue(ctxt->result_queue, result); 
+   enqueue(ctxt->result_queue, result);
    free_blob(result);
 }
 
@@ -50,7 +58,7 @@ void steal_and_process_thread(void *arg){
          sys_sleep(100);
          continue;
       }
-      
+
       conn = connect_service(TCP, (const char *)temp->data, WORK_STEAL_PORT);
       send_request("steal_client", 20, conn);
       free_blob(temp);
@@ -96,16 +104,22 @@ void send_result_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
    blob* temp;
 #if DEBUG_FLAG
-   uint32_t task_counter = 0;   
+   uint32_t task_counter = 0;
 #endif
    while(1){
       temp = dequeue(ctxt->result_queue);
-      conn = connect_service(TCP, ctxt->gateway_local_addr, RESULT_COLLECT_PORT);
-      send_request("result_gateway", 20, conn);
+
+      int32_t cli_id = get_blob_cli_id(temp);
+      const char *cli_addr = get_client_addr(cli_id, ctxt);
+
+      conn = connect_service(TCP, cli_addr, RESULT_COLLECT_PORT);
+      send_request("result_back", 20, conn);
+
 #if DEBUG_FLAG
-      task_counter ++;  
-      printf("send_result for task %d:%d, total number is %d\n", get_blob_cli_id(temp), get_blob_task_id(temp), task_counter); 
+      task_counter ++;
+      printf("send_result for task %d:%d, total number is %d\n", cli_id, get_blob_task_id(temp), task_counter);
 #endif
+
       send_data(temp, conn);
       free_blob(temp);
       close_service_connection(conn);
@@ -136,6 +150,3 @@ void serve_stealing_thread(void *arg){
    start_service(wst_service, TCP, request_types, 1, handlers, arg);
    close_service(wst_service);
 }
-
-
-

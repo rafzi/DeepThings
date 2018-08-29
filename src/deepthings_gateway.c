@@ -43,111 +43,6 @@ void notify_coverage(device_ctxt* ctxt, blob* task_input_blob, uint32_t cli_id){
 }
 #endif
 
-/*Same implementation with result_gateway,just insert more profiling information*/
-void* deepthings_result_gateway(void* srv_conn, void* arg){
-   printf("result_gateway ... ... \n");
-   device_ctxt* ctxt = (device_ctxt*)arg;
-   service_conn *conn = (service_conn *)srv_conn;
-   int32_t cli_id;
-   int32_t frame_seq;
-#if DEBUG_FLAG
-   char ip_addr[ADDRSTRLEN];
-   int32_t processing_cli_id;
-   inet_ntop(conn->serv_addr_ptr->sin_family, &(conn->serv_addr_ptr->sin_addr), ip_addr, ADDRSTRLEN);
-   processing_cli_id = get_client_id(ip_addr, ctxt);
-#if DEBUG_TIMING
-   double total_time;
-   uint32_t total_frames;
-   double now;
-   uint32_t i;
-#endif
-   if(processing_cli_id < 0)
-      printf("Client IP address unknown ... ...\n");
-#endif
-   blob* temp = recv_data(conn);
-   cli_id = get_blob_cli_id(temp);
-   frame_seq = get_blob_frame_seq(temp);
-#if DEBUG_COMMU_SIZE
-   commu_size = commu_size + temp->size;
-#endif
-#if DEBUG_FLAG
-   printf("Result from %d: %s is for client %d, total number recved is %d\n", processing_cli_id, ip_addr, cli_id, ctxt->results_counter[cli_id]);
-#endif
-   enqueue(ctxt->results_pool[cli_id], temp);
-   free_blob(temp);
-   ctxt->results_counter[cli_id]++;
-   if(ctxt->results_counter[cli_id] == ctxt->batch_size){
-      temp = new_empty_blob(cli_id);
-#if DEBUG_FLAG
-      printf("Results for client %d are all collected in deepthings_result_gateway, update ready_pool\n", cli_id);
-#endif
-#if DEBUG_TIMING
-      printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
-      now = sys_now_in_sec();
-      /*Total latency*/
-      acc_time[cli_id] = now - start_time;
-      acc_frames[cli_id] = frame_seq + 1;
-      total_time = 0;
-      total_frames = 0;
-      for(i = 0; i < ctxt->total_cli_num; i ++){
-         if(acc_frames[i] > 0)
-             printf("Avg latency for Client %d is: %f\n", i, acc_time[i]/acc_frames[i]);
-         total_time = total_time + acc_time[i];
-         total_frames = total_frames + acc_frames[i];
-      }
-      printf("Avg latency for all clients %f\n", total_time/total_frames);
-#endif
-#if DEBUG_COMMU_SIZE
-      printf("Communication size at gateway is: %f\n", ((double)commu_size)/(1024.0*1024.0*FRAME_NUM));
-#endif
-      enqueue(ctxt->ready_pool, temp);
-      free_blob(temp);
-      ctxt->results_counter[cli_id] = 0;
-   }
-
-   return NULL;
-}
-
-void deepthings_collect_result_thread(void *arg){
-   const char* request_types[]={"result_gateway"};
-   void* (*handlers[])(void*, void*) = {deepthings_result_gateway};
-   int result_service = service_init(RESULT_COLLECT_PORT, TCP);
-   start_service(result_service, TCP, request_types, 1, handlers, arg);
-   close_service(result_service);
-}
-
-void deepthings_merge_result_thread(void *arg){
-   cnn_model* model = (cnn_model*)(((device_ctxt*)(arg))->model);
-#ifdef NNPACK
-   nnp_initialize();
-   model->net->threadpool = pthreadpool_create(THREAD_NUM);
-#endif
-   blob* temp;
-   int32_t cli_id;
-   int32_t frame_seq;
-   while(1){
-      temp = dequeue_and_merge((device_ctxt*)arg);
-      cli_id = get_blob_cli_id(temp);
-      frame_seq = get_blob_frame_seq(temp);
-#if DEBUG_FLAG
-      printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
-#endif
-      float* fused_output = (float*)(temp->data);
-      image_holder img = load_image_as_model_input(model, get_blob_frame_seq(temp));
-      set_model_input(model, fused_output);
-      forward_all(model, model->ftp_para->fused_layers);   
-      draw_object_boxes(model, get_blob_frame_seq(temp));
-      free_image_holder(model, img);
-      free_blob(temp);
-#if DEBUG_FLAG
-      printf("Client %d, frame sequence number %d, finish processing\n", cli_id, frame_seq);
-#endif
-   }
-#ifdef NNPACK
-   pthreadpool_destroy(model->net->threadpool);
-   nnp_deinitialize();
-#endif
-}
 
 
 #if DATA_REUSE
@@ -268,17 +163,10 @@ void deepthings_work_stealing_thread(void *arg){
 
 void deepthings_gateway(uint32_t N, uint32_t M, uint32_t fused_layers, char* network, char* weights, uint32_t total_edge_number, const char** addr_list){
    device_ctxt* ctxt = deepthings_gateway_init(N, M, fused_layers, network, weights, total_edge_number, addr_list);
-   sys_thread_t t3 = sys_thread_new("deepthings_work_stealing_thread", deepthings_work_stealing_thread, ctxt, 0, 0);
-   sys_thread_t t1 = sys_thread_new("deepthings_collect_result_thread", deepthings_collect_result_thread, ctxt, 0, 0);
-   sys_thread_t t2 = sys_thread_new("deepthings_merge_result_thread", deepthings_merge_result_thread, ctxt, 0, 0);
+   sys_thread_t t1 = sys_thread_new("deepthings_work_stealing_thread", deepthings_work_stealing_thread, ctxt, 0, 0);
    exec_barrier(START_CTRL, TCP, ctxt);
 #if DEBUG_TIMING
    start_time = sys_now_in_sec();
 #endif
    sys_thread_join(t1);
-   sys_thread_join(t2);
-   sys_thread_join(t3);
 }
-
-
-

@@ -17,10 +17,10 @@ void partition_and_enqueue(device_ctxt* ctxt, uint32_t frame_num){
          dw2 = model->ftp_para->input_tiles[task][0].w2;
          dh1 = model->ftp_para->input_tiles[task][0].h1;
          dh2 = model->ftp_para->input_tiles[task][0].h2;
-         data = crop_feature_maps(get_model_input(model), 
-                                  net_para->input_maps[0].w, 
+         data = crop_feature_maps(get_model_input(model),
+                                  net_para->input_maps[0].w,
                                   net_para->input_maps[0].h,
-                                  net_para->input_maps[0].c, 
+                                  net_para->input_maps[0].c,
                                   dw1, dw2, dh1, dh2);
          data_size = sizeof(float)*(dw2-dw1+1)*(dh2-dh1+1)*net_para->input_maps[0].c;
          temp = new_blob_and_copy_data((int32_t)task, data_size, (uint8_t*)data);
@@ -44,10 +44,10 @@ void partition_and_enqueue(device_ctxt* ctxt, uint32_t frame_num){
             dw2 = model->ftp_para->input_tiles[task][0].w2;
             dh1 = model->ftp_para->input_tiles[task][0].h1;
             dh2 = model->ftp_para->input_tiles[task][0].h2;
-            data = crop_feature_maps(get_model_input(model), 
-                                  net_para->input_maps[0].w, 
+            data = crop_feature_maps(get_model_input(model),
+                                  net_para->input_maps[0].w,
                                   net_para->input_maps[0].h,
-                                  net_para->input_maps[0].c, 
+                                  net_para->input_maps[0].c,
                                   dw1, dw2, dh1, dh2);
             data_size = sizeof(float)*(dw2-dw1+1)*(dh2-dh1+1)*net_para->input_maps[0].c;
             temp = new_blob_and_copy_data((int32_t)task, data_size, (uint8_t*)data);
@@ -70,13 +70,13 @@ void partition_and_enqueue(device_ctxt* ctxt, uint32_t frame_num){
             dw2 = ftp_para_reuse->input_tiles[task][0].w2;
             dh1 = ftp_para_reuse->input_tiles[task][0].h1;
             dh2 = ftp_para_reuse->input_tiles[task][0].h2;
-            ftp_para_reuse->shrinked_input[task] = 
-                                  crop_feature_maps(get_model_input(model), 
-                                  net_para->input_maps[0].w, 
+            ftp_para_reuse->shrinked_input[task] =
+                                  crop_feature_maps(get_model_input(model),
+                                  net_para->input_maps[0].w,
                                   net_para->input_maps[0].h,
-                                  net_para->input_maps[0].c, 
+                                  net_para->input_maps[0].c,
                                   dw1, dw2, dh1, dh2);
-            ftp_para_reuse->shrinked_input_size[task] = 
+            ftp_para_reuse->shrinked_input_size[task] =
                           sizeof(float)*(dw2-dw1+1)*(dh2-dh1+1)*net_para->input_maps[0].c;
          }
       }
@@ -92,7 +92,8 @@ blob* dequeue_and_merge(device_ctxt* ctxt){
 #if DEBUG_FLAG
    printf("Check ready_pool... : Client %d is ready, merging the results\n", temp->id);
 #endif
-   uint32_t cli_id = temp->id;
+   int32_t cli_id = get_blob_cli_id(temp);
+   int32_t frame_seq = get_blob_frame_seq(temp);
    free_blob(temp);
 
    ftp_parameters *ftp_para = model->ftp_para;
@@ -100,35 +101,33 @@ blob* dequeue_and_merge(device_ctxt* ctxt){
 
 
    uint32_t stage_outs =  (net_para->output_maps[ftp_para->fused_layers-1].w)*(net_para->output_maps[ftp_para->fused_layers-1].h)*(net_para->output_maps[ftp_para->fused_layers-1].c);
-   float* stage_out = (float*) malloc(sizeof(float)*stage_outs);  
-   uint32_t stage_out_size = sizeof(float)*stage_outs;  
+   float* stage_out = (float*) malloc(sizeof(float)*stage_outs);
+   uint32_t stage_out_size = sizeof(float)*stage_outs;
    uint32_t part = 0;
    uint32_t task = 0;
-   uint32_t frame_num = 0;
    float* cropped_output;
 
    for(part = 0; part < ftp_para->partitions; part ++){
-      temp = dequeue(ctxt->results_pool[cli_id]);
+      temp = dequeue(ctxt->results_pool[frame_seq]);
       task = get_blob_task_id(temp);
-      frame_num = get_blob_frame_seq(temp);
 
       if(net_para->type[ftp_para->fused_layers-1] == CONV_LAYER){
-         tile_region tmp = relative_offsets(ftp_para->input_tiles[task][ftp_para->fused_layers-1], 
-                                       ftp_para->output_tiles[task][ftp_para->fused_layers-1]);  
-         cropped_output = crop_feature_maps((float*)temp->data, 
-                      ftp_para->input_tiles[task][ftp_para->fused_layers-1].w, 
-                      ftp_para->input_tiles[task][ftp_para->fused_layers-1].h, 
-                      net_para->output_maps[ftp_para->fused_layers-1].c, 
+         tile_region tmp = relative_offsets(ftp_para->input_tiles[task][ftp_para->fused_layers-1],
+                                       ftp_para->output_tiles[task][ftp_para->fused_layers-1]);
+         cropped_output = crop_feature_maps((float*)temp->data,
+                      ftp_para->input_tiles[task][ftp_para->fused_layers-1].w,
+                      ftp_para->input_tiles[task][ftp_para->fused_layers-1].h,
+                      net_para->output_maps[ftp_para->fused_layers-1].c,
                       tmp.w1, tmp.w2, tmp.h1, tmp.h2);
       }else{cropped_output = (float*)temp->data;}
 
-      stitch_feature_maps(cropped_output, stage_out, 
-                          net_para->output_maps[ftp_para->fused_layers-1].w, 
-                          net_para->output_maps[ftp_para->fused_layers-1].h, 
-                          net_para->output_maps[ftp_para->fused_layers-1].c, 
-                          ftp_para->output_tiles[task][ftp_para->fused_layers-1].w1, 
+      stitch_feature_maps(cropped_output, stage_out,
+                          net_para->output_maps[ftp_para->fused_layers-1].w,
+                          net_para->output_maps[ftp_para->fused_layers-1].h,
+                          net_para->output_maps[ftp_para->fused_layers-1].c,
+                          ftp_para->output_tiles[task][ftp_para->fused_layers-1].w1,
                           ftp_para->output_tiles[task][ftp_para->fused_layers-1].w2,
-                          ftp_para->output_tiles[task][ftp_para->fused_layers-1].h1, 
+                          ftp_para->output_tiles[task][ftp_para->fused_layers-1].h1,
                           ftp_para->output_tiles[task][ftp_para->fused_layers-1].h2);
 
       if(net_para->type[ftp_para->fused_layers-1] == CONV_LAYER){free(cropped_output);}
@@ -138,7 +137,6 @@ blob* dequeue_and_merge(device_ctxt* ctxt){
 
    temp = new_blob_and_copy_data(cli_id, stage_out_size, (uint8_t*)stage_out);
    free(stage_out);
-   annotate_blob(temp, cli_id, frame_num, task);
+   annotate_blob(temp, cli_id, frame_seq, task);
    return temp;
 }
-

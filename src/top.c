@@ -14,11 +14,11 @@
 ./deepthings -mode non_data_src -edge_id 4 -n 5 -m 5 -l 16
 ./deepthings -mode non_data_src -edge_id 5 -n 5 -m 5 -l 16
 
-./deepthings -mode <execution mode: {start, gateway, data_src, non_data_src}> 
-             -total_edge <total edge number: t> 
+./deepthings -mode <execution mode: {start, gateway, data_src, non_data_src}>
+             -total_edge <total edge number: t>
              -edge_id <edge device ID: e={0, ... t-1}>
-             -n <FTP dimension: N> 
-             -m <FTP dimension: M> 
+             -n <FTP dimension: N>
+             -m <FTP dimension: M>
              -l <numder of fused layers: L>
 */
 
@@ -36,7 +36,7 @@ int main(int argc, char **argv){
    char network_file[30] = "models/yolo.cfg";
    char weight_file[30] = "models/yolo.weights";
 
-   if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "start")){  
+   if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "start")){
       printf("start\n");
       exec_start_gateway(START_CTRL, TCP, GATEWAY_PUBLIC_ADDR);
    }else if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "gateway")){
@@ -48,13 +48,12 @@ int main(int argc, char **argv){
       printf("Data source edge device\n");
       printf("This client ID is %d\n", get_int_arg(argc, argv, "-edge_id", 0));
       this_cli_id = get_int_arg(argc, argv, "-edge_id", 0);
-      deepthings_victim_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id);
+      deepthings_victim_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, MAX_EDGE_NUM, addr_list);
    }else if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "non_data_src")){
       printf("Idle edge device\n");
       printf("This client ID is %d\n", get_int_arg(argc, argv, "-edge_id", 0));
       this_cli_id = get_int_arg(argc, argv, "-edge_id", 0);
-      deepthings_stealer_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id);
+      deepthings_stealer_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, MAX_EDGE_NUM, addr_list);
    }
    return 0;
 }
-

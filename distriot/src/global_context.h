@@ -2,19 +2,22 @@
 #define GLOBAL_CONTEXT_H
 #include "thread_safe_queue.h"
 #include <string.h>
-#define ADDR_LEN 64 
+#define ADDR_LEN 64
 #define MAX_QUEUE_SIZE 256
 
 typedef struct dev_ctxt {
+   // Results that have been gathered from own node or other stealer nodes. Indexed by frame_seq.
    thread_safe_queue** results_pool;
+   // Signals that enough results have been gathered to finalize inference.
    thread_safe_queue* ready_pool;
-   uint32_t* results_counter;
+   // Holds nodes that are registered for work stealing.
    thread_safe_queue* registration_list;
    char** addr_list;
    uint32_t total_cli_num;
 
    thread_safe_queue* task_queue;
-   thread_safe_queue* result_queue; 
+   // Results that the own node generated.
+   thread_safe_queue* result_queue;
    uint32_t this_cli_id;
 
    uint32_t batch_size;/*Number of tasks to merge*/
@@ -32,4 +35,3 @@ void set_gateway_local_addr(device_ctxt* ctxt, const char* addr);
 void set_gateway_public_addr(device_ctxt* ctxt, const char* addr);
 void set_total_frames(device_ctxt* ctxt, uint32_t frame_num);
 #endif
-

@@ -5,17 +5,17 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <sys/types.h> 
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
 /*Assgin port number for different services*/
 #define PORTNO 11111 //Service for job stealing and sharing
-#define SMART_GATEWAY 11112 //Service for a smart gateway 
+#define SMART_GATEWAY 11112 //Service for a smart gateway
 #define START_CTRL 11113 //Control the start and stop of a service
-#define RESULT_COLLECT_PORT 11114 //Control the start and stop of a service
-#define WORK_STEAL_PORT 11115 //Control the start and stop of a service
+#define RESULT_COLLECT_PORT 11114 //Service for collecting results
+#define WORK_STEAL_PORT 11115 //Service for providing steal data at edge nodes
 
 #define IPV4_TASK 1
 #define IPV6_TASK !(IPV4_TASK)
@@ -24,7 +24,7 @@
 #define ADDRSTRLEN INET_ADDRSTRLEN
 #elif IPV6_TASK/*IPV4_TASK*/
 #define ADDRSTRLEN INET6_ADDRSTRLEN
-#endif/*IPV4_TASK*/   
+#endif/*IPV4_TASK*/
 
 #include "data_blob.h"
 
@@ -40,7 +40,7 @@ typedef struct service_connection{
    struct sockaddr_in* serv_addr_ptr;
    #elif IPV6_TASK/*IPV4_TASK*/
    struct sockaddr_in6* serv_addr_ptr;
-   #endif/*IPV4_TASK*/   
+   #endif/*IPV4_TASK*/
 } service_conn;
 
 /*Networking API on service client side*/
