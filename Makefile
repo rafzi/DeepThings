@@ -14,14 +14,14 @@ DISTRIOTLIB=libdistriot.a
 CC=gcc
 LDFLAGS= -lm -pthread
 CFLAGS=-Wall -fPIC
-COMMON=-I$(DISTRIOT)/include/ -I$(DISTRIOT)/src/ -I$(DARKNET)/include/ -I$(DARKNET)/src/ -Iinclude/ -Isrc/ 
+COMMON=-I$(DISTRIOT)/include/ -I$(DISTRIOT)/src/ -I$(DARKNET)/include/ -I$(DARKNET)/src/ -Iinclude/ -Isrc/
 LDLIB=-L$(DISTRIOT) -l:$(DISTRIOTLIB) -L$(DARKNET) -l:$(DARKNETLIB)
 
-ifeq ($(OPENMP), 1) 
+ifeq ($(OPENMP), 1)
 CFLAGS+= -fopenmp
 endif
 
-ifeq ($(DEBUG), 1) 
+ifeq ($(DEBUG), 1)
 OPTS+=-O0 -g
 else
 OPTS+=-Ofast
@@ -39,7 +39,7 @@ CFLAGS+= -DARM_NEON -mfpu=neon-vfpv4 -funsafe-math-optimizations -ftree-vectoriz
 endif
 
 CFLAGS+=$(OPTS)
-OBJS = top.o ftp.o inference_engine_helper.o frame_partitioner.o adjacent_reuse_data_serialization.o self_reuse_data_serialization.o deepthings_edge.o deepthings_gateway.o cmd_line_parser.o
+OBJS = top.o ftp.o inference_engine_helper.o frame_partitioner.o adjacent_reuse_data_serialization.o self_reuse_data_serialization.o deepthings_edge.o deepthings_gateway.o cmd_line_parser.o weight_partitioner.o
 EXECOBJ = $(addprefix $(OBJDIR), $(OBJS))
 DEPS = $(wildcard */*.h) Makefile
 
@@ -68,7 +68,7 @@ test:
 clean_all:
 	make -C $(DISTRIOT) clean
 	make -C $(DARKNET) clean
-	rm -rf $(EXEC) $(EXECOBJ) *.log $(OBJDIR) *.png 
+	rm -rf $(EXEC) $(EXECOBJ) *.log $(OBJDIR) *.png
 
 clean:
-	rm -rf $(EXEC) $(EXECOBJ) *.log $(OBJDIR) *.png 
+	rm -rf $(EXEC) $(EXECOBJ) *.log $(OBJDIR) *.png

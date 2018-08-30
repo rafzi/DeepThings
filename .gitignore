@@ -2,3 +2,5 @@ deepthings
 libdistriot.a
 libdistriot.so
 obj/
+
+models/yolo.weights

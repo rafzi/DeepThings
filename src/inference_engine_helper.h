@@ -39,6 +39,7 @@
 
 #include "configure.h"
 #include "ftp.h"
+#include "weight_partitioner.h"
 
 typedef struct cnn_model_wrapper{
    ftp_parameters* ftp_para;
@@ -46,6 +47,7 @@ typedef struct cnn_model_wrapper{
 #if DATA_REUSE
    ftp_parameters_reuse* ftp_para_reuse;
 #endif
+   weight_partitioning_parameters weight_part_para;
    network* net;/*network is from Darknet*/
 } cnn_model;
 

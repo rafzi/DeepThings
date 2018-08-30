@@ -20,6 +20,13 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    model->ftp_para_reuse = preform_ftp_reuse(model->net_para, model->ftp_para);
 #endif
    ctxt->model = model;
+
+   load_partitioned_weights(model, edge_id, cli_num);
+   for (int i = 0; i < model->weight_part_para.num_fused_layers; i++)
+   {
+      printf("fused layer: %i and next\n", model->weight_part_para.fused_layers[i]);
+   }
+
    set_gateway_local_addr(ctxt, GATEWAY_LOCAL_ADDR);
    set_gateway_public_addr(ctxt, GATEWAY_PUBLIC_ADDR);
    set_total_frames(ctxt, FRAME_NUM);
@@ -225,11 +232,6 @@ void steal_partition_and_perform_inference_thread(void *arg){
       free_blob(temp);
    }
 }
-
-
-/*defined in gateway.h from darkiot
-void send_result_thread;
-*/
 
 
 /*Function handling steal reqeust*/
