@@ -6,7 +6,7 @@ static inline void write_to_sock(int sock, ctrl_proto proto, uint8_t* buffer, ui
 static inline service_conn* new_service_conn(int sockfd, ctrl_proto proto, const char *dest_ip, struct sockaddr_in* addr, int portno);
 #elif IPV6_TASK/*IPV4_TASK*/
 static inline service_conn* new_service_conn(int sockfd, ctrl_proto proto, const char *dest_ip, struct sockaddr_in6* addr, int portno);
-#endif/*IPV4_TASK*/ 
+#endif/*IPV4_TASK*/
 
 int service_init(int portno, ctrl_proto proto){
    int sockfd;
@@ -42,7 +42,7 @@ int service_init(int portno, ctrl_proto proto){
 	printf("ERROR on binding\n");
 	exit(EXIT_FAILURE);
    }
-   if (proto == TCP) listen(sockfd, 10);/*back_log numbers*/ 
+   if (proto == TCP) listen(sockfd, 10);/*back_log numbers*/
    return sockfd;
 }
 
@@ -155,7 +155,7 @@ blob* recv_data(service_conn* conn){
 void send_request(void* req, uint32_t req_size, service_conn* conn){
    blob* temp = new_blob_and_copy_data(0, req_size, req);
    send_data(temp, conn);
-   free_blob(temp);  
+   free_blob(temp);
 }
 
 static uint8_t* recv_request(service_conn* conn){
@@ -164,8 +164,8 @@ static uint8_t* recv_request(service_conn* conn){
    temp = recv_data(conn);
    req = (uint8_t*)malloc(sizeof(uint8_t)*(temp->size));
    memcpy(req, temp->data, temp->size);
-   free_blob(temp); 
-   return req; 
+   free_blob(temp);
+   return req;
 }
 
 static inline uint32_t look_up_handler_table(char* name, const char* handler_name[], uint32_t handler_num){
@@ -196,8 +196,8 @@ void start_service_for_n_times(int sockfd, ctrl_proto proto, const char* handler
          newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
       }else if(proto == UDP){
          newsockfd = sockfd;
-      }else{ 
-         printf("Protocol is not supported\n"); 
+      }else{
+         printf("Protocol is not supported\n");
          return;
       }
       if (newsockfd < 0) {printf("ERROR on accept\n");return;}
@@ -206,8 +206,8 @@ void start_service_for_n_times(int sockfd, ctrl_proto proto, const char* handler
 
       /*First recv the request and look up the handler table*/
       req = recv_request(conn);
-      handler_id =  look_up_handler_table((char*)req, handler_name, handler_num); 
-  
+      handler_id =  look_up_handler_table((char*)req, handler_name, handler_num);
+
       free(req);
       if(handler_id == handler_num){printf("Operation is not supported!\n"); return;}
       /*Recv meta control data and pick up the correct handler*/
@@ -218,7 +218,7 @@ void start_service_for_n_times(int sockfd, ctrl_proto proto, const char* handler
 
       /*Close connection*/
       if(proto == TCP){
-         close(newsockfd);     
+         close(newsockfd);
       }
       /*Close connection*/
    }
@@ -243,8 +243,8 @@ void start_service(int sockfd, ctrl_proto proto, const char* handler_name[], uin
          newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
       }else if(proto == UDP){
          newsockfd = sockfd;
-      }else{ 
-         printf("Protocol is not supported\n"); 
+      }else{
+         printf("Protocol is not supported\n");
          return;
       }
       if (newsockfd < 0) {printf("ERROR on accept\n");return;}
@@ -253,8 +253,8 @@ void start_service(int sockfd, ctrl_proto proto, const char* handler_name[], uin
 
       /*First recv the request and look up the handler table*/
       req = recv_request(conn);
-      handler_id =  look_up_handler_table((char*)req, handler_name, handler_num); 
-   
+      handler_id =  look_up_handler_table((char*)req, handler_name, handler_num);
+
       free(req);
       if(handler_id == handler_num){printf("Operation is not supported!\n"); return;}
       /*Recv meta control data and pick up the correct handler*/
@@ -265,7 +265,7 @@ void start_service(int sockfd, ctrl_proto proto, const char* handler_name[], uin
 
       /*Close connection*/
       if(proto == TCP){
-         close(newsockfd);     
+         close(newsockfd);
       }
       /*Close connection*/
    }
@@ -304,7 +304,7 @@ static inline void write_to_sock(int sock, ctrl_proto proto, uint8_t* buffer, ui
       }else if(proto == UDP){
          if((bytes_length - bytes_written) < UDP_TRANS_SIZE) { n = bytes_length - bytes_written; }
          else { n = UDP_TRANS_SIZE; }
-         if(sendto(sock, buffer + bytes_written, n, 0, to, tolen)< 0) 
+         if(sendto(sock, buffer + bytes_written, n, 0, to, tolen)< 0)
 	   printf("ERROR writing socket\n");
       }else{printf("Protocol is not supported\n"); return;}
       bytes_written += n;
@@ -315,12 +315,18 @@ static inline void write_to_sock(int sock, ctrl_proto proto, uint8_t* buffer, ui
 static inline service_conn* new_service_conn(int sockfd, ctrl_proto proto, const char *dest_ip, struct sockaddr_in* addr, int portno){
 #elif IPV6_TASK/*IPV4_TASK*/
 static inline service_conn* new_service_conn(int sockfd, ctrl_proto proto, const char *dest_ip, struct sockaddr_in6* addr, int portno){
-#endif/*IPV4_TASK*/ 
-   service_conn* conn = (service_conn*)malloc(sizeof(service_conn)); 
+#endif/*IPV4_TASK*/
+   service_conn* conn = (service_conn*)malloc(sizeof(service_conn));
    conn->sockfd = sockfd;
    conn->proto = proto;
    if(addr!=NULL){
-      conn->serv_addr_ptr = addr;
+      #if IPV4_TASK
+      conn->serv_addr_ptr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+      memcpy(conn->serv_addr_ptr, addr, sizeof(struct sockaddr_in));
+      #elif IPV6_TASK/*IPV4_TASK*/
+      conn->serv_addr_ptr = (struct sockaddr_in6*)malloc(sizeof(struct sockaddr_in6));
+      memcpy(conn->serv_addr_ptr, addr, sizeof(struct sockaddr_in6));
+      #endif/*IPV4_TASK*/
    }else{
       #if IPV4_TASK
       conn->serv_addr_ptr = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
@@ -332,7 +338,122 @@ static inline service_conn* new_service_conn(int sockfd, ctrl_proto proto, const
       conn->serv_addr_ptr->sin6_family = AF_INET6;
       conn->serv_addr_ptr->sin6_port = htons(portno);
       inet_pton(AF_INET6, dest_ip, &(conn->serv_addr_ptr->sin6_addr));
-      #endif/*IPV4_TASK*/ 
+      #endif/*IPV4_TASK*/
    }
-   return conn; 
+   return conn;
+}
+
+
+
+
+// FIXME: its bad to start a thread for every new client. this is the most convenient solution for now, but a real one
+// would be async handling with partial serialization.
+
+#include "thread_util.h"
+
+
+typedef struct
+{
+    int sockfd;
+    service_conn *conn;
+    const char **handler_name;
+    uint32_t handler_num;
+    void *(**handlers)(void *, void *);
+    int (*cb_push)(void *, void *);
+    void *user_args;
+} push_service_args;
+
+static void push_service_worker(void *arg)
+{
+    push_service_args *targs = (push_service_args *)arg;
+
+    char ip_addr[ADDRSTRLEN];
+    inet_ntop(targs->conn->serv_addr_ptr->sin_family, &(targs->conn->serv_addr_ptr->sin_addr), ip_addr, ADDRSTRLEN);
+    int32_t cli_id = get_client_id(ip_addr, (void*)targs->user_args);
+    printf(">>> new conn open with %d: %s\n", cli_id, ip_addr);
+
+    while (1)
+    {
+        printf(">>> pushing data...\n");
+        int stop = targs->cb_push(targs->conn, targs->user_args);
+        if (stop)
+        {
+            break;
+        }
+
+        printf(">>> pushed.. waiting for results\n");
+        uint8_t *req = recv_request(targs->conn);
+        uint32_t handler_id = look_up_handler_table((char *)req, targs->handler_name, targs->handler_num);
+        free(req);
+
+        if (handler_id > targs->handler_num)
+        {
+            printf("Operation is not supported!\n");
+            return;
+        }
+
+        targs->handlers[handler_id](targs->conn, targs->user_args);
+    }
+
+    close_service_connection(targs->conn);
+    free(arg);
+}
+
+
+void start_parallel_push_service(int sockfd, ctrl_proto proto, int (*cb_push)(void *, void *),
+                                 const char *handler_name[], uint32_t handler_num, void *(*handlers[])(void *, void *),
+                                 void *arg)
+{
+#if IPV4_TASK
+    struct sockaddr_in cli_addr;
+#elif IPV6_TASK /*IPV4_TASK*/
+    struct sockaddr_in6 cli_addr;
+#endif          /*IPV4_TASK*/
+    socklen_t clilen = sizeof(cli_addr);
+    service_conn *conn;
+
+    while (1)
+    {
+        /*Accept incoming connection*/
+        int newsockfd;
+        if (proto == TCP)
+        {
+            newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
+        }
+        else if (proto == UDP)
+        {
+            newsockfd = sockfd;
+        }
+        else
+        {
+            printf("Protocol is not supported\n");
+            return;
+        }
+        if (newsockfd < 0)
+        {
+            printf("ERROR on accept\n");
+            return;
+        }
+        conn = new_service_conn(newsockfd, proto, NULL, &cli_addr, 0);
+
+        char ip_addr[ADDRSTRLEN];
+        inet_ntop(conn->serv_addr_ptr->sin_family, &(conn->serv_addr_ptr->sin_addr), ip_addr, ADDRSTRLEN);
+        int32_t cli_id = get_client_id(ip_addr, (void*)arg);
+        printf(">>> starting new thread for cli %d: %s\n", cli_id, ip_addr);
+
+        // Handle client communication in a new thread.
+        push_service_args *args = malloc(sizeof(*args));
+        args->sockfd = newsockfd;
+        args->conn = conn;
+        args->handler_name = handler_name;
+        args->handler_num = handler_num;
+        args->handlers = handlers;
+        args->cb_push = cb_push;
+        args->user_args = arg;
+        sys_thread_t t = sys_thread_new("push_service_worker", push_service_worker, args, 0, 0);
+    }
+    /*This should not be called, users must explicitly call void close_service_connection(conn)*/
+    close(sockfd);
+
+    // join all: sys_thread_join
 }

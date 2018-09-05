@@ -49,6 +49,16 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       strcpy(ctxt->addr_list[i], edge_addr_list[i]);
    }
 
+   // Weight partitioning part.
+   ctxt->result_queue_weightpart = new_queue(MAX_QUEUE_SIZE);
+   ctxt->ready_pool_weightpart = new_queue(MAX_QUEUE_SIZE);
+   ctxt->results_pool_weightpart = new_queue(MAX_QUEUE_SIZE);
+   ctxt->task_queue_weightpart = malloc(ctxt->total_cli_num * sizeof(thread_safe_queue*));
+   for (int i = 0; i < ctxt->total_cli_num; i++)
+   {
+      ctxt->task_queue_weightpart[i] = new_queue(MAX_QUEUE_SIZE);
+   }
+
    return ctxt;
 }
 
@@ -124,6 +134,41 @@ static inline void process_task(device_ctxt* ctxt, blob* temp, bool is_reuse){
 
 }
 
+static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
+   cnn_model *model = (cnn_model*)ctxt->model;
+
+   set_model_input(model, (float*)task->data);
+
+   int layer_id = task->id;
+   layer *l = &model->net->layers[layer_id];
+
+   forward_convolutional_layer_nnpack(*l, *model->net);
+
+   // If fused, process the next layer.
+   if (is_weight_part_fused_layer(model, layer_id))
+   {
+      set_model_input(model, l->output);
+      layer_id++;
+      l = &model->net->layers[layer_id];
+
+      struct nnp_size input_size = { l->w, l->h };
+      struct nnp_padding input_padding = { l->pad, l->pad, l->pad, l->pad };
+      struct nnp_size kernel_size = { l->size, l->size };
+      struct nnp_size stride = { l->stride, l->stride };
+
+      nnp_convolution_inference(nnp_convolution_algorithm_implicit_gemm, nnp_convolution_transform_strategy_tuple_based,
+                              l->c, l->n, input_size, input_padding, kernel_size, stride, model->net->input,
+                              l->weights, NULL, l->output, NULL, NULL, nnp_activation_identity, NULL,
+                              model->net->threadpool, NULL);
+   }
+
+   blob *result = new_blob_and_copy_data(0, get_model_byte_size(model, layer_id), (uint8_t*)get_model_output(model, layer_id));
+   copy_blob_meta(result, task);
+   annotate_blob(result, get_this_client_id(ctxt), 0, task->id);
+   printf("processed blob on cli: %d\n", get_blob_cli_id(result));
+   result->id = task->id;
+   return result;
+}
 
 void partition_frame_and_perform_inference_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
@@ -131,6 +176,9 @@ void partition_frame_and_perform_inference_thread(void *arg){
    blob* temp;
    uint32_t frame_num;
    bool* reuse_data_is_required;
+
+   int32_t own_cli_id = get_this_client_id(ctxt);
+
    for(frame_num = 0; frame_num < FRAME_NUM; frame_num ++){
       /*Wait for i/o device input*/
       /*recv_img()*/
@@ -180,19 +228,180 @@ void partition_frame_and_perform_inference_thread(void *arg){
 #endif
       }
 
+
+      // Now wait for stealers to return their results.
+      temp = dequeue_and_merge(ctxt);
+      int32_t cli_id = get_blob_cli_id(temp);
+      int32_t frame_seq = get_blob_frame_seq(temp);
+#if DEBUG_FLAG
+      printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
+#endif
+      float* fused_output = (float*)(temp->data);
+      image_holder img = load_image_as_model_input(model, get_blob_frame_seq(temp));
+      set_model_input(model, fused_output);
+
+      network *net = model->net;
+      for (int i = model->ftp_para->fused_layers; i < net->n; i++){
+         printf("===weight part: layer %d/%d\n", i, net->n - 1);
+         layer *l = &net->layers[i];
+         net->index = i;
+         if (l->delta){
+            fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+         }
+
+         if (l->type == CONVOLUTIONAL){
+            printf("==weight part: conv layer!\n");
+
+            // Is a distributed layer.
+
+            // Partition the first layer: All nodes get same input.
+            //ctxt->weight_part_input = net->input;
+
+            blob *task_input = new_blob_and_move_data(i, l->inputs * sizeof(float), net->input);
+
+            // into task queue? no, need id specific
+            for (int target_cli_id = 0; target_cli_id < ctxt->total_cli_num; target_cli_id++){
+               enqueue(ctxt->task_queue_weightpart[target_cli_id], task_input);
+            }
+
+            // Process local tasks.
+            while (1)
+            {
+               blob *task_wpart = try_dequeue(ctxt->task_queue_weightpart[own_cli_id]);
+               if (!task_wpart){
+                  printf("===weight part: no more local tasks for me\n");
+                  break;
+               }
+
+               printf("===weight part: processing local task %d\n", task_wpart->id);
+
+               blob *result = process_task_weightpart(ctxt, task_wpart);
+               free_blob(task_wpart);
+               store_weight_part_result(ctxt, result);
+               free_blob(result);
+            }
+
+            // Wait for results.
+            printf("===weight part: waiting for other results\n");
+            blob *ready = dequeue(ctxt->ready_pool_weightpart);
+
+            // Only now we can free the input.
+            free_blob(task_input);
+
+            // Merge outputs.
+            bool is_fused = is_weight_part_fused_layer(model, i);
+            if (is_fused)
+            {
+               // Need to set to zero for fused layers, because results will be added on top.
+               memset(l->output, 0, l->outputs * sizeof(float));
+            }
+            int num_partitions = ctxt->total_cli_num;
+            for (int j = 0; j < num_partitions; j++)
+            {
+               blob *result = dequeue(ctxt->results_pool_weightpart);
+               int layer_id = result->id;
+               if (layer_id != i)
+               {
+                  printf("ERROR: got unexpected layer id!\n");
+               }
+               int partition_id = get_blob_cli_id(result);
+
+               if (is_fused)
+               {
+                  layer_id++;
+
+                  // Need to do more elaborate merging.
+                  // TODO
+               } else {
+                  // Simple concatenation of outputs.
+                  copy_weight_part_output(l, result->data, partition_id, num_partitions);
+                  printf("copied weights from %d in layer %d\n", partition_id, layer_id);
+               }
+            }
+         }else{
+            // Not convolutional. Execute locally.
+            l->forward(*l, *net);
+         }
+
+         net->input = l->output;
+         if (l->truth){
+            net->truth = l->output;
+         }
+      }
+
+      //forward_all(model, model->ftp_para->fused_layers);
+      printf("saving frame: %d\n", get_blob_frame_seq(temp));
+      draw_object_boxes(model, get_blob_frame_seq(temp));
+      free_image_holder(model, img);
+      free_blob(temp);
+#if DEBUG_FLAG
+      printf("Client %d, frame sequence number %d, finish processing\n", cli_id, frame_seq);
+#endif
+
       /*Unregister and prepare for next image*/
       cancel_client(ctxt);
    }
 }
 
 
+typedef struct
+{
+   int32_t steal_from_cli_id;
+   device_ctxt *ctxt;
+   bool *done; // FIXME: must be atomic.
+} steal_weightpart_args;
 
+void steal_weightpart_thread(void *arg){
+   steal_weightpart_args *args = (steal_weightpart_args*)arg;
+   device_ctxt *ctxt = args->ctxt;
+
+   printf(">>> connecting to %d: %s\n", args->steal_from_cli_id, get_client_addr(args->steal_from_cli_id, ctxt));
+
+   service_conn *conn = connect_service(TCP, get_client_addr(args->steal_from_cli_id, ctxt), WEIGHT_PART_PORT);
+
+   while (1)
+   {
+      // Wait for data.
+      printf(">>> waiting for data\n");
+      blob *task = recv_data(conn);
+      if (task->id == -1){
+         // No more tasks with this client. Close the connection.
+         printf(">>> closing the connection\n");
+         free_blob(task);
+         close_service_connection(conn);
+         *args->done = true;
+         break;
+      }
+
+      // Process data.
+      printf(">>> processing data\n");
+      blob *result = process_task_weightpart(ctxt, task);
+      free_blob(task);
+      /*enqueue(ctxt->result_queue_weightpart, result);
+      free_blob(result);*/
+
+      // Why not send it back directly?? Try that first...
+      printf(">>> sending back the results. cli: %d\n", get_blob_cli_id(result));
+      send_request("results_weight", 20, conn);
+      send_data(result, conn);
+      free_blob(result);
+   }
+}
 
 void steal_partition_and_perform_inference_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
    /*Check gateway for possible stealing victims*/
    service_conn* conn;
    blob* temp;
+
+   bool thread_running = false;
+   bool thread_done = false;
+   sys_thread_t t;
+
+   steal_weightpart_args args;
+   args.ctxt = ctxt;
+   args.done = &thread_done;
+
    while(1){
       conn = connect_service(TCP, ctxt->gateway_local_addr, WORK_STEAL_PORT);
       send_request("steal_gateway", 20, conn);
@@ -202,6 +411,18 @@ void steal_partition_and_perform_inference_thread(void *arg){
          free_blob(temp);
          sys_sleep(100);
          continue;
+      }
+
+      if (!thread_running)
+      {
+         printf("spawning steal wpart service conn thread\n");
+         thread_running = true;
+         t = sys_thread_new("steal_weightpart_thread", steal_weightpart_thread, &args, 0, 0);
+      } else if (thread_done) {
+         printf("stop steal wpart service conn thread\n");
+         sys_thread_join(t);
+         thread_running = false;
+         thread_done = false;
       }
 
       conn = connect_service(TCP, (const char *)temp->data, WORK_STEAL_PORT);
@@ -237,7 +458,7 @@ void steal_partition_and_perform_inference_thread(void *arg){
 /*Function handling steal reqeust*/
 #if DATA_REUSE
 void* steal_client_reuse_aware(void* srv_conn, void* arg){
-   printf("steal_client_reuse_aware ... ... \n");
+   //printf("steal_client_reuse_aware ... ... \n");
    service_conn *conn = (service_conn *)srv_conn;
    device_ctxt* ctxt = (device_ctxt*)arg;
    cnn_model* edge_model = (cnn_model*)(ctxt->model);
@@ -356,10 +577,11 @@ void gather_result(device_ctxt *ctxt, blob *result){
    int32_t frame_seq = get_blob_frame_seq(result);
    int32_t task_id = get_blob_task_id(result);
 
-   printf("gathering result frame: %d, task: %d   complete: %d/%d\n", frame_seq, task_id, ctxt->results_pool[frame_seq]->number_of_node+1, ctxt->batch_size);
+   uint32_t num_nodes = enqueue(ctxt->results_pool[frame_seq], result);
 
-   enqueue(ctxt->results_pool[frame_seq], result);
-   if (ctxt->results_pool[frame_seq]->number_of_node == ctxt->batch_size){
+   printf("gathering result frame: %d, task: %d   complete: %d/%d\n", frame_seq, task_id, num_nodes, ctxt->batch_size);
+
+   if (num_nodes == ctxt->batch_size){
       printf("Results ready!\n");
       blob *ready = new_empty_blob(cli_id);
       annotate_blob(ready, cli_id, frame_seq, task_id);
@@ -407,32 +629,7 @@ void deepthings_collect_result_thread(void *arg){
    close_service(result_service);
 }
 
-void deepthings_merge_result_thread(void *arg){
-   cnn_model* model = (cnn_model*)(((device_ctxt*)(arg))->model);
-   blob* temp;
-   int32_t cli_id;
-   int32_t frame_seq;
-   while(1){
-      temp = dequeue_and_merge((device_ctxt*)arg);
-      cli_id = get_blob_cli_id(temp);
-      frame_seq = get_blob_frame_seq(temp);
-#if DEBUG_FLAG
-      printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
-#endif
-      float* fused_output = (float*)(temp->data);
-      image_holder img = load_image_as_model_input(model, get_blob_frame_seq(temp));
-      set_model_input(model, fused_output);
-      forward_all(model, model->ftp_para->fused_layers);
-      draw_object_boxes(model, get_blob_frame_seq(temp));
-      free_image_holder(model, img);
-      free_blob(temp);
-#if DEBUG_FLAG
-      printf("Client %d, frame sequence number %d, finish processing\n", cli_id, frame_seq);
-#endif
-   }
-}
-
-void gather_local_results(void *arg){
+void gather_local_results_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
    blob *temp;
 
@@ -443,6 +640,73 @@ void gather_local_results(void *arg){
    }
 }
 
+int on_weight_part_push(void *svc_conn, void *arg){
+   service_conn *conn = (service_conn*)svc_conn;
+   device_ctxt *ctxt = (device_ctxt*)arg;
+
+   // Get other client id.
+   char ip_addr[ADDRSTRLEN];
+   inet_ntop(conn->serv_addr_ptr->sin_family, &(conn->serv_addr_ptr->sin_addr), ip_addr, ADDRSTRLEN);
+   int32_t cli_id = get_client_id(ip_addr, ctxt);
+
+   printf("waiting for data to push to %d\n", cli_id);
+
+   blob *task = dequeue(ctxt->task_queue_weightpart[cli_id]);
+   if (task->id == -1)
+   {
+      // Stop the connection.
+      printf("closing connection with %d\n", cli_id);
+      send_data(task, conn);
+      free_blob(task);
+      return 1;
+   }
+
+   printf("sending task data to %d\n", cli_id);
+   send_data(task, conn);
+
+   return 0;
+}
+
+void store_weight_part_result(device_ctxt *ctxt, blob *result)
+{
+   int32_t cli_id = get_blob_cli_id(result);
+   int32_t frame_seq = get_blob_frame_seq(result);
+   int32_t task_id = get_blob_task_id(result);
+
+   uint32_t num_nodes = enqueue(ctxt->results_pool_weightpart, result);
+
+   printf("gathering result weightpart cli: %d, frame: %d, task: %d   complete: %d/%d\n", cli_id, frame_seq, task_id, num_nodes, ctxt->total_cli_num);
+
+   if (num_nodes == ctxt->total_cli_num){
+      printf("Weight results ready!\n");
+      blob *ready = new_empty_blob(cli_id);
+      annotate_blob(ready, cli_id, frame_seq, task_id);
+      enqueue(ctxt->ready_pool_weightpart, ready);
+      free_blob(ready);
+   }
+}
+
+void *on_weight_part_results(void *svc_conn, void *arg){
+   service_conn *conn = (service_conn*)svc_conn;
+   device_ctxt *ctxt = (device_ctxt*)arg;
+
+   blob *result = recv_data(conn);
+   store_weight_part_result(ctxt, result);
+   free_blob(result);
+}
+
+void weight_part_service_thread(void *arg){
+   device_ctxt *ctxt = (device_ctxt*)arg;
+
+   const char *request_types[] = { "results_weight" };
+   void *(*handlers[])(void*, void*) = { on_weight_part_results };
+
+   int push_service = service_init(WEIGHT_PART_PORT, TCP);
+   start_parallel_push_service(push_service, TCP, on_weight_part_push, request_types, 1, handlers, arg);
+   close_service(push_service);
+}
+
+
 void deepthings_victim_edge(uint32_t N, uint32_t M, uint32_t fused_layers, char* network, char* weights, uint32_t edge_id, uint32_t cli_num, const char** edge_addr_list){
 
 
@@ -450,16 +714,16 @@ void deepthings_victim_edge(uint32_t N, uint32_t M, uint32_t fused_layers, char*
    exec_barrier(START_CTRL, TCP, ctxt);
 
    sys_thread_t t1 = sys_thread_new("partition_frame_and_perform_inference_thread", partition_frame_and_perform_inference_thread, ctxt, 0, 0);
-   sys_thread_t t2 = sys_thread_new("gather_local_results", gather_local_results, ctxt, 0, 0);
+   sys_thread_t t2 = sys_thread_new("gather_local_results_thread", gather_local_results_thread, ctxt, 0, 0);
    sys_thread_t t3 = sys_thread_new("deepthings_collect_result_thread", deepthings_collect_result_thread, ctxt, 0, 0);
-   sys_thread_t t4 = sys_thread_new("deepthings_merge_result_thread", deepthings_merge_result_thread, ctxt, 0, 0);
    sys_thread_t t5 = sys_thread_new("deepthings_serve_stealing_thread", deepthings_serve_stealing_thread, ctxt, 0, 0);
+   sys_thread_t t6 = sys_thread_new("weight_part_service_thread", weight_part_service_thread, ctxt, 0, 0);
 
    sys_thread_join(t1);
    sys_thread_join(t2);
    sys_thread_join(t3);
-   sys_thread_join(t4);
    sys_thread_join(t5);
+   sys_thread_join(t6);
 
 #ifdef NNPACK
    pthreadpool_destroy(((cnn_model*)ctxt->model)->net->threadpool);

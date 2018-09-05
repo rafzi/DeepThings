@@ -6,7 +6,7 @@ static queue_node* new_node_and_copy_item(blob* item)
    temp->item = new_blob_and_copy_data(item->id, item->size, item->data);
    copy_blob_meta(temp->item, item);
    temp->next = NULL;
-   return temp; 
+   return temp;
 }
 
 thread_safe_queue *new_queue(uint32_t capacity)
@@ -22,8 +22,9 @@ thread_safe_queue *new_queue(uint32_t capacity)
    return q;
 }
 
-void enqueue(thread_safe_queue *queue, blob* item)
+uint32_t enqueue(thread_safe_queue *queue, blob* item)
 {
+   uint32_t num_nodes;
    uint8_t first;
    queue_node *temp = new_node_and_copy_item(item);
    sys_arch_sem_wait(&(queue->mutex), 0);
@@ -44,6 +45,7 @@ void enqueue(thread_safe_queue *queue, blob* item)
       first = 0;
    }
    queue->number_of_node++;
+   num_nodes = queue->number_of_node;
 
    if (first) {
       sys_sem_signal(&queue->not_empty);
@@ -51,6 +53,7 @@ void enqueue(thread_safe_queue *queue, blob* item)
 
    sys_sem_signal(&queue->mutex);
 
+   return num_nodes;
 }
 
 blob* dequeue(thread_safe_queue *queue)
@@ -61,13 +64,13 @@ blob* dequeue(thread_safe_queue *queue)
       /* We block while waiting for a mail to arrive in the mailbox. */
       sys_arch_sem_wait(&queue->not_empty, 0);
       sys_arch_sem_wait(&queue->mutex, 0);
-   } 
+   }
 
    queue_node *temp = queue->head;
    queue->head = queue->head->next;
    if (queue->head == NULL)
       queue->tail = NULL;
-   blob* item = temp->item; 
+   blob* item = temp->item;
    free(temp);
    queue->number_of_node--;
 
@@ -94,7 +97,7 @@ void print_queue_by_id(thread_safe_queue *queue){
       }
       printf("%d, ", cur->item->id);
       cur = cur->next;
-   } 
+   }
 
    sys_sem_signal(&queue->mutex);
    return;
@@ -119,7 +122,7 @@ void remove_by_id(thread_safe_queue *queue, int32_t id){
       sys_sem_signal(&queue->mutex);
       return;
    }
-   
+
    while (cur != NULL) {
       if(cur->item->id == id){
          prev->next = cur->next;
@@ -134,7 +137,7 @@ void remove_by_id(thread_safe_queue *queue, int32_t id){
       }
       prev = cur;
       cur = cur->next;
-   } 
+   }
 
    sys_sem_signal(&queue->mutex);
    return;
@@ -146,13 +149,13 @@ blob* try_dequeue(thread_safe_queue *queue)
    while (queue->head == NULL) {
       sys_sem_signal(&queue->mutex);
       return NULL;
-   } 
+   }
 
    queue_node *temp = queue->head;
    queue->head = queue->head->next;
    if (queue->head == NULL)
       queue->tail = NULL;
-   blob* item = temp->item; 
+   blob* item = temp->item;
    free(temp);
    queue->number_of_node--;
 
@@ -176,5 +179,3 @@ void free_queue(thread_safe_queue *queue)
     free(queue);
   }
 }
-
-

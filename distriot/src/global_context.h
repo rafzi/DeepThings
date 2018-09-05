@@ -20,6 +20,12 @@ typedef struct dev_ctxt {
    thread_safe_queue* result_queue;
    uint32_t this_cli_id;
 
+   // Weight partitioning queues.
+   thread_safe_queue *results_pool_weightpart;
+   thread_safe_queue *ready_pool_weightpart;
+   thread_safe_queue **task_queue_weightpart;
+   thread_safe_queue *result_queue_weightpart;
+
    uint32_t batch_size;/*Number of tasks to merge*/
    void *model;/*pointers to execution model*/
    uint32_t total_frames;/*max number of input frames*/

@@ -16,6 +16,7 @@
 #define START_CTRL 11113 //Control the start and stop of a service
 #define RESULT_COLLECT_PORT 11114 //Service for collecting results
 #define WORK_STEAL_PORT 11115 //Service for providing steal data at edge nodes
+#define WEIGHT_PART_PORT 11116 //Service for weight partitioning communication
 
 #define IPV4_TASK 1
 #define IPV6_TASK !(IPV4_TASK)
@@ -53,6 +54,10 @@ int service_init(int portno, ctrl_proto proto);
 void start_service_for_n_times(int sockfd, ctrl_proto proto, const char* handler_name[], uint32_t handler_num, void* (*handlers[])(void*, void*), void* arg, uint32_t times);
 void start_service(int sockfd, ctrl_proto proto, const char* handler_name[], uint32_t handler_num, void* (*handlers[])(void*, void*), void* arg);
 void close_service(int sockfd);
+
+void start_parallel_push_service(int sockfd, ctrl_proto proto, int (*cb_push)(void *, void *),
+                                 const char *handler_name[], uint32_t handler_num, void *(*handlers[])(void *, void *),
+                                 void *arg);
 
 /*Data exchanging API on both sides*/
 blob* recv_data(service_conn* conn);
