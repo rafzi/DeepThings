@@ -34,5 +34,6 @@ int get_weight_part_weight_offset(layer *l, int partition_id, int num_partitions
 int get_weight_part_output_offset(layer *l, int partition_id, int num_partitions);
 
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions);
+void finalize_weight_part_fused_output(layer *l, network *net);
 
 #endif

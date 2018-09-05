@@ -3,6 +3,24 @@
 #include <assert.h>
 
 
+// The extra field is only used in reorg layers. Misuse it to save the original number of filters or channels.
+static void backup_orig_n(layer *l)
+{
+    l->extra = l->n;
+}
+static void backup_orig_c(layer *l)
+{
+    l->extra = l->c;
+}
+static int get_orig_n(layer *l)
+{
+    return l->extra;
+}
+static int get_orig_c(layer *l)
+{
+    return l->extra;
+}
+
 static void prune_filters(layer *l, int partition_id, int num_partitions)
 {
     int partitionSize = l->n / num_partitions;
@@ -23,8 +41,7 @@ static void prune_filters(layer *l, int partition_id, int num_partitions)
     free(l->weights);
     l->weights = pruned_weights;
 
-    // This field is only used in reorg layers. Misuse it to save the original number of filters.
-    l->extra = l->n;
+    backup_orig_n(l);
 
     int outSize = l->w * l->h * numFilters;
     l->outputs = outSize;
@@ -56,12 +73,14 @@ static void prune_channels(layer *l, int partition_id, int num_partitions)
     float *reorg_weights = malloc(l->n * filterSizeReorg * sizeof(float));
     for (int i = 0; i < l->n; i++)
     {
-        int weightOffset = i * filterSize * partition_id * filterSizeReorgPrev;
+        int weightOffset = i * filterSize + partition_id * filterSizeReorgPrev;
         memcpy(reorg_weights + i * filterSizeReorg, l->weights + weightOffset, filterSizeReorg * sizeof(float));
     }
 
     free(l->weights);
     l->weights = reorg_weights;
+
+    backup_orig_c(l);
 
     l->c = numChannels;
 }
@@ -119,7 +138,7 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
         prune_filters(l, partition_id, num_partitions);
         printf("layer %d: orignumfilt: %d, numfilt: %d\n", i, l->extra, l->n);
 
-        continue; /// SKIP FUSING FOR NOW
+        // continue; /// SKIP FUSING
 
         int next_i = i + 1;
         layer *next_l = &net->layers[next_i];
@@ -143,7 +162,7 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
 
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions)
 {
-    int orig_num_filters = l->extra;
+    int orig_num_filters = get_orig_n(l);
     int partition_size = orig_num_filters / num_partitions;
     int num_filters = partition_size;
     if (partition_id == num_partitions - 1)
@@ -151,7 +170,8 @@ void copy_weight_part_output(layer *l, float *data, int partition_id, int num_pa
         num_filters += orig_num_filters % num_partitions;
     }
 
-    printf("restoring tiles: orignumfilt: %d, numfilt: %d, for this(%d): %d\n", orig_num_filters, l->n, partition_id, num_filters);
+    printf("restoring tiles: orignumfilt: %d, numfilt: %d, for this(%d): %d\n", orig_num_filters, l->n, partition_id,
+           num_filters);
 
     int out_offset = partition_id * l->w * l->h * partition_size;
     int out_size = l->w * l->h * num_filters;
@@ -159,4 +179,25 @@ void copy_weight_part_output(layer *l, float *data, int partition_id, int num_pa
     printf("out offset: %d,  out_sz: %d\n", out_offset, out_size);
 
     memcpy(l->output + out_offset, data, out_size * sizeof(float));
+}
+
+void finalize_weight_part_fused_output(layer *l, network *net)
+{
+    // Finalize the layer.
+    int out_h = convolutional_out_height(*l);
+    int out_w = convolutional_out_width(*l);
+    int n = out_h * out_w;
+
+    if (l->batch_normalize)
+    {
+        forward_batchnorm_layer(*l, *net);
+    }
+    else
+    {
+        add_bias(l->output, l->biases, l->batch, l->n, out_h * out_w);
+    }
+
+    activate_array_thread(l->output, l->n, n, l->activation, net->threadpool);
+    if (l->binary || l->xnor)
+        swap_binary(l);
 }

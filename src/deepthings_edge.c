@@ -147,9 +147,22 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
    // If fused, process the next layer.
    if (is_weight_part_fused_layer(model, layer_id))
    {
-      set_model_input(model, l->output);
+      printf("processing fused layer\n");
+
+      model->net->input = l->output;
+      if (l->truth)
+      {
+         model->net->truth = l->output;
+      }
+
       layer_id++;
       l = &model->net->layers[layer_id];
+
+      model->net->index = layer_id;
+      if (l->delta)
+      {
+         fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+      }
 
       struct nnp_size input_size = { l->w, l->h };
       struct nnp_padding input_padding = { l->pad, l->pad, l->pad, l->pad };
@@ -168,6 +181,26 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
    printf("processed blob on cli: %d\n", get_blob_cli_id(result));
    result->id = task->id;
    return result;
+}
+
+static void print_out(layer *l)
+{
+    // Print basics of layer for debugging.
+
+    printf("##########################\n");
+    printf("outputs: %d\n", l->outputs);
+    printf("first value: %f\n", l->output[0]);
+    printf("last value: %f\n", l->output[l->outputs - 1]);
+    printf("##########################\n");
+}
+
+void print_part_data(float *data, int n)
+{
+    printf("~~~~~~~~~\n");
+    printf("outputs: %d\n", n);
+    printf("first value: %f\n", data[0]);
+    printf("last value: %f\n", data[n - 1]);
+    printf("~~~~~~~~~\n");
 }
 
 void partition_frame_and_perform_inference_thread(void *arg){
@@ -289,39 +322,67 @@ void partition_frame_and_perform_inference_thread(void *arg){
             free_blob(task_input);
 
             // Merge outputs.
-            bool is_fused = is_weight_part_fused_layer(model, i);
-            if (is_fused)
+            int num_partitions = ctxt->total_cli_num;
+            if (is_weight_part_fused_layer(model, i))
             {
+               // More elaborate merging: add outputs and finalize layer.
+
+               // Advance one layer.
+               i++;
+               l = &net->layers[i];
+               net->index = i;
+               if (l->delta){
+                  fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+               }
+
+               printf("##### processing output of merged layer %d + %d\n", i - 1, i);
+
                // Need to set to zero for fused layers, because results will be added on top.
                memset(l->output, 0, l->outputs * sizeof(float));
-            }
-            int num_partitions = ctxt->total_cli_num;
-            for (int j = 0; j < num_partitions; j++)
-            {
-               blob *result = dequeue(ctxt->results_pool_weightpart);
-               int layer_id = result->id;
-               if (layer_id != i)
+
+               for (int j = 0; j < num_partitions; j++)
                {
-                  printf("ERROR: got unexpected layer id!\n");
+                  blob *result = dequeue(ctxt->results_pool_weightpart);
+                  int layer_id = result->id;
+                  if (layer_id != i - 1)
+                  {
+                     printf("ERROR: got unexpected layer id!\n");
+                  }
+
+                  print_part_data(result->data, l->outputs);
+
+                  // Accumulate to the output.
+                  // TODO is there an nnpack accelerator for this?
+                  for (int k = 0; k < l->outputs; k++)
+                  {
+                     l->output[k] += ((float*)result->data)[k];
+                  }
                }
-               int partition_id = get_blob_cli_id(result);
 
-               if (is_fused)
+               finalize_weight_part_fused_output(l, net);
+            } else {
+               // Simple concatenation of outputs.
+
+               for (int j = 0; j < num_partitions; j++)
                {
-                  layer_id++;
+                  blob *result = dequeue(ctxt->results_pool_weightpart);
+                  int layer_id = result->id;
+                  if (layer_id != i)
+                  {
+                     printf("ERROR: got unexpected layer id!\n");
+                  }
 
-                  // Need to do more elaborate merging.
-                  // TODO
-               } else {
-                  // Simple concatenation of outputs.
+                  int partition_id = get_blob_cli_id(result);
                   copy_weight_part_output(l, result->data, partition_id, num_partitions);
-                  printf("copied weights from %d in layer %d\n", partition_id, layer_id);
+                  printf("copied weights from %d in layer %d\n", partition_id, i);
                }
             }
          }else{
             // Not convolutional. Execute locally.
             l->forward(*l, *net);
          }
+
+         print_out(l);
 
          net->input = l->output;
          if (l->truth){
