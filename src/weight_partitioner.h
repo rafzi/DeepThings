@@ -26,6 +26,7 @@ typedef struct
 
 
 bool is_weight_part_fused_layer(cnn_model *model, int layer_id);
+bool is_entire_weightpart_input_required(cnn_model *model, int layer_id);
 
 void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitions);
 

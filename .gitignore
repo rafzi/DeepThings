@@ -4,3 +4,6 @@ libdistriot.so
 obj/
 
 models/yolo.weights
+
+.vscode
+core

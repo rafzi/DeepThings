@@ -26,12 +26,12 @@
 static const char* addr_list[MAX_EDGE_NUM] = EDGE_ADDR_LIST;
 
 int main(int argc, char **argv){
-   uint32_t total_cli_num = 0;
    uint32_t this_cli_id = 0;
 
    uint32_t partitions_h = get_int_arg(argc, argv, "-n", 5);
    uint32_t partitions_w = get_int_arg(argc, argv, "-m", 5);
    uint32_t fused_layers = get_int_arg(argc, argv, "-l", 16);
+   uint32_t total_cli_num = get_int_arg(argc, argv, "-total_edge", 0);
 
    char network_file[30] = "models/yolo.cfg";
    char weight_file[30] = "models/yolo.weights";
@@ -42,18 +42,17 @@ int main(int argc, char **argv){
    }else if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "gateway")){
       printf("Gateway device\n");
       printf("We have %d edge devices now\n", get_int_arg(argc, argv, "-total_edge", 0));
-      total_cli_num = get_int_arg(argc, argv, "-total_edge", 0);
       deepthings_gateway(partitions_h, partitions_w, fused_layers, network_file, weight_file, total_cli_num, addr_list);
    }else if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "data_src")){
       printf("Data source edge device\n");
       printf("This client ID is %d\n", get_int_arg(argc, argv, "-edge_id", 0));
       this_cli_id = get_int_arg(argc, argv, "-edge_id", 0);
-      deepthings_victim_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, MAX_EDGE_NUM, addr_list);
+      deepthings_victim_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, total_cli_num, addr_list);
    }else if(0 == strcmp(get_string_arg(argc, argv, "-mode", "none"), "non_data_src")){
       printf("Idle edge device\n");
       printf("This client ID is %d\n", get_int_arg(argc, argv, "-edge_id", 0));
       this_cli_id = get_int_arg(argc, argv, "-edge_id", 0);
-      deepthings_stealer_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, MAX_EDGE_NUM, addr_list);
+      deepthings_stealer_edge(partitions_h, partitions_w, fused_layers, network_file, weight_file, this_cli_id, total_cli_num, addr_list);
    }
    return 0;
 }

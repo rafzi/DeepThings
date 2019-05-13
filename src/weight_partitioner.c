@@ -99,6 +99,21 @@ bool is_weight_part_fused_layer(cnn_model *model, int layer_id)
     return false;
 }
 
+bool is_entire_weightpart_input_required(cnn_model *model, int layer_id)
+{
+    if (layer_id <= model->ftp_para->fused_layers)
+    {
+        return true;
+    }
+    network *net = model->net;
+    if (is_weight_part_fused_layer(model, layer_id - 1) || is_weight_part_fused_layer(model, layer_id - 2))
+    {
+        return true;
+    }
+    layer *prev_l = &net->layers[layer_id - 1];
+    return prev_l->type != CONVOLUTIONAL;
+}
+
 void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitions)
 {
     // FIXME: this is just pruning weights that have already been loaded. it should only load the neccessary weights in
@@ -136,7 +151,6 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
         para->num_part_layers++;
 
         prune_filters(l, partition_id, num_partitions);
-        printf("layer %d: orignumfilt: %d, numfilt: %d\n", i, l->extra, l->n);
 
         // continue; /// SKIP FUSING
 
@@ -170,13 +184,8 @@ void copy_weight_part_output(layer *l, float *data, int partition_id, int num_pa
         num_filters += orig_num_filters % num_partitions;
     }
 
-    printf("restoring tiles: orignumfilt: %d, numfilt: %d, for this(%d): %d\n", orig_num_filters, l->n, partition_id,
-           num_filters);
-
     int out_offset = partition_id * l->w * l->h * partition_size;
     int out_size = l->w * l->h * num_filters;
-
-    printf("out offset: %d,  out_sz: %d\n", out_offset, out_size);
 
     memcpy(l->output + out_offset, data, out_size * sizeof(float));
 }
