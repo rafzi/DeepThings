@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "deepthings_edge.h"
 #include "ftp.h"
 #include "inference_engine_helper.h"
@@ -416,8 +417,20 @@ printf("5: %d\n", sys_now() - time_start);
       /*Unregister and prepare for next image*/
       cancel_client(ctxt);
    }
+   uint32_t run_time = sys_now() - time_start;
+   printf("Finished in %d ms\n", run_time);
 
-   printf("Finished in %d ms\n", sys_now() - time_start);
+   FILE *out_file;
+
+   out_file = fopen("result_times.txt", "a");
+   fprintf(out_file, "%d %d %s\n", run_time, MAX_EDGE_NUM,
+#ifdef SKIP_FUSING
+	"skip"
+#else
+	"no-skip"
+#endif 
+		   );
+   fclose(out_file);
 }
 
 
