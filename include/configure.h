@@ -30,7 +30,7 @@
   "192.168.1.10", \
   "192.168.1.11", \
   "192.168.1.15"}
-#ifndef
+#ifndef MAX_EDGE_NUM
 #define MAX_EDGE_NUM 6
 #endif
 #define FRAME_NUM 1
