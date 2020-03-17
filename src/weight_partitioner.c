@@ -152,8 +152,9 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
 
         prune_filters(l, partition_id, num_partitions);
 
-        // continue; /// SKIP FUSING
-
+#ifdef SKIP_FUSING
+        continue; /// SKIP FUSING
+#endif
         int next_i = i + 1;
         layer *next_l = &net->layers[next_i];
         if (next_i < net->n && next_l->type == CONVOLUTIONAL)
