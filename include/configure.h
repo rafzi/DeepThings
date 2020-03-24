@@ -21,15 +21,15 @@
 #define DEBUG_COMMU_SIZE 1
 
 /*Configuration parameters for DistrIoT*/
-#define GATEWAY_PUBLIC_ADDR "192.168.1.1"
-#define GATEWAY_LOCAL_ADDR "192.168.1.1"
+#define GATEWAY_PUBLIC_ADDR "192.168.0.2"
+#define GATEWAY_LOCAL_ADDR "192.168.0.2"
 #define EDGE_ADDR_LIST    { \
-  "192.168.1.3", \
-  "192.168.1.6", \
-  "192.168.1.7", \
-  "192.168.1.10", \
-  "192.168.1.11", \
-  "192.168.1.15"}
+  "192.168.0.3", \
+  "192.168.0.4", \
+  "192.168.0.5", \
+  "192.168.0.6", \
+  "192.168.0.7", \
+  "192.168.0.8"}
 #define MAX_EDGE_NUM 6
 #pragma message "Using default edge dev count of 6"
 #else

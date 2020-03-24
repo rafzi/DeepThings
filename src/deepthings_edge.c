@@ -533,7 +533,7 @@ void steal_partition_and_perform_inference_thread(void *arg){
    bool thread_done = false;
    sys_thread_t t;
 
-   steal_weightpart_args args = {0};
+   steal_weightpart_args args;
    args.ctxt = ctxt;
    args.done = &thread_done;
 
