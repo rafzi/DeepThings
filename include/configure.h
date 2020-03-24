@@ -31,6 +31,12 @@
   "192.168.1.11", \
   "192.168.1.15"}
 #define MAX_EDGE_NUM 6
+#pragma message "Using default edge dev count of 6"
+#else
+#define STRING2(x) #x
+#define STRING(x) STRING2(x)
+#pragma message(STRING(MAX_EDGE_NUM) " edge devices")
+#endif
 #define FRAME_NUM 1
 
 #endif
