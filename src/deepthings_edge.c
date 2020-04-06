@@ -22,9 +22,10 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    ctxt->model = model;
 
    load_partitioned_weights(model, edge_id, cli_num);
-   for (int i = 0; i < model->weight_part_para.num_fused_layers; i++)
+
+   for (int i = 0; i < model->net->n; i++)
    {
-      printf("fused layer: %i and next\n", model->weight_part_para.fused_layers[i]);
+      printf("layer %i has type: %s\n", i, get_layer_type_name(model->weight_part_para.type[i]));
    }
 
    set_gateway_local_addr(ctxt, GATEWAY_LOCAL_ADDR);
@@ -255,7 +256,7 @@ void partition_frame_and_perform_inference_thread(void *arg){
       network *net = model->net;
       for (int i = model->ftp_para->fused_layers; i < net->n; i++){
          //printf("===weight part: layer %d/%d\n", i, net->n - 1);
-printf("start layer: %d\n", sys_now() - time_start);
+printf("start layer %i at %d\n", i, sys_now() - time_start);
          layer *l = &net->layers[i];
          net->index = i;
          if (l->delta){
@@ -291,7 +292,7 @@ printf("start layer: %d\n", sys_now() - time_start);
                   enqueue(ctxt->task_queue_weightpart[target_cli_id], task_input);
                } else {
                   for (int c = 0; c < ctxt->total_cli_num; c++){
-                     if (!is_entire_weightpart_input_required(model, i) &&
+                     if (can_reuse_lop_output(model, i) &&
                         c == target_cli_id){
                         // Target cli can reuse data. Just queue a dummy segment.
                         enqueue(ctxt->task_queue_weightpart[target_cli_id], dummy);
@@ -461,7 +462,7 @@ uint32_t time_start = sys_now();
       cnn_model *model = (cnn_model*)ctxt->model;
       layer *l = &model->net->layers[layer_id];
 
-      bool can_reuse = !is_entire_weightpart_input_required(model, layer_id);
+      bool can_reuse = can_reuse_lop_output(model, layer_id);
 
       // Reassemble data.
       blob *task = new_blob_and_alloc_data(layer_id, l->inputs * sizeof(float));

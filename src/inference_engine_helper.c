@@ -17,6 +17,13 @@ cnn_model* load_cnn_model(char* cfg, char* weights){
    model->net_para->type = (uint32_t*)malloc(sizeof(uint32_t)*(net->n));
    model->net_para->input_maps = (tile_region*) malloc(sizeof(tile_region)*(net->n));
    model->net_para->output_maps = (tile_region*) malloc(sizeof(tile_region)*(net->n));
+   
+   model->weight_part_para.type = (enum layer_partition_type*)malloc(sizeof(enum layer_partition_type)*net->n);
+   for (int i = 0; i < net->n; i++)
+   {
+      model->weight_part_para.type[i] = LAYER_PART_TYPE_NONE;
+   }
+   
    uint32_t l;
    for(l = 0; l < (net->n); l++){
       model->net_para->stride[l] = net->layers[l].stride;
