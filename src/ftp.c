@@ -262,6 +262,7 @@ ftp_parameters_reuse* preform_ftp_reuse(network_parameters* net_para, ftp_parame
    uint32_t task;
 
    ftp_parameters_reuse* ftp_para_reuse = (ftp_parameters_reuse*)malloc(sizeof(ftp_parameters_reuse));
+   memset(ftp_para_reuse, 0, sizeof(ftp_parameters_reuse));
    ftp_para_reuse->partitions = ftp_para->partitions;
    ftp_para_reuse->partitions_h = ftp_para->partitions_h;
    ftp_para_reuse->partitions_w = ftp_para->partitions_w;
@@ -429,7 +430,7 @@ tile_region get_region(overlapped_tile_data * overlap, uint32_t pos){
    if(pos == 1) return overlap->right_region;
    if(pos == 2) return overlap->up_region;
    if(pos == 3) return overlap->left_region;
-   tile_region empty;
+   tile_region empty = { 0 };
    return empty;
 }
 

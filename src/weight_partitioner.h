@@ -8,7 +8,7 @@
 #include <stdbool.h>
 
 
-#define MAX_PARTITIONED_WEIGHT_LAYERS 32
+#define MAX_PARTITIONED_WEIGHT_LAYERS 256
 
 
 struct cnn_model_wrapper;

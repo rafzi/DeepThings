@@ -251,6 +251,9 @@ void forward_partition(cnn_model* model, uint32_t task_id, bool is_reuse){
    /*network_parameters* net_para = model->net_para;*/
    uint32_t l;
    for(l = 0; l < ftp_para->fused_layers; l++){
+      if (net.layers[l].type == SHORTCUT) {
+         continue;
+      }
       net.layers[l].h = ftp_para->input_tiles[task_id][l].h;
       net.layers[l].out_h = (net.layers[l].h/net.layers[l].stride); 
       net.layers[l].w = ftp_para->input_tiles[task_id][l].w;
