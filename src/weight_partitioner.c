@@ -2,14 +2,11 @@
 #include "inference_engine_helper.h"
 #include <assert.h>
 
-// The extra field is only used in reorg layers. Misuse it to save the original number of filters or channels.
-static void backup_orig_n(layer *l)
+// The extra and flatten fields are only used in reorg layers. Misuse them to save the original number of filters or channels.
+static void backup_orig_n_c(layer *l)
 {
     l->extra = l->n;
-}
-static void backup_orig_c(layer *l)
-{
-    l->extra = l->c;
+    l->flatten = l->c;
 }
 static int get_orig_n(layer *l)
 {
@@ -17,53 +14,72 @@ static int get_orig_n(layer *l)
 }
 static int get_orig_c(layer *l)
 {
-    return l->extra;
+    return l->flatten;
 }
 
-static void prune_filters(layer *l, int partition_id, int num_partitions)
+static int get_partition_size_filters(layer *l, int num_partitions)
 {
-    int partitionSize = l->n / num_partitions;
-
-    int numFilters = partitionSize;
+    return get_orig_n(l) / num_partitions;
+}
+static int get_partition_size_channels(layer *l, int num_partitions)
+{
+    return get_orig_c(l) / num_partitions;
+}
+static int get_num_filters(layer *l, int partition_id, int num_partitions)
+{
+    int numFilters = get_partition_size_filters(l, num_partitions);
     if (partition_id == num_partitions - 1)
     {
         // In case the division has a remainder, add the missing filters in the last partition.
-        numFilters += l->n % num_partitions;
+        numFilters += get_orig_n(l) % num_partitions;
     }
+    return numFilters;
+}
+static int get_num_channels(layer *l, int partition_id, int num_partitions)
+{
+    int numChannels = get_partition_size_channels(l, num_partitions);
+    if (partition_id == num_partitions - 1)
+    {
+        // In case the division has a remainder, add the missing channels in the last partition.
+        numChannels += get_orig_c(l) % num_partitions;
+    }
+    return numChannels;
+}
+static int get_filter_size(layer *l)
+{
+    return l->size * l->size * l->c;
+}
 
+
+static void prune_filters(layer *l, int partition_id, int num_partitions)
+{
     // Can use continuous chunk of weight buffer, because the outermost array is filters.
-    int filterSize = l->size * l->size * l->c;
-    int prunedWeightsSize = filterSize * numFilters;
-    float *pruned_weights = malloc(prunedWeightsSize * sizeof(float));
-    memcpy(pruned_weights, l->weights + partition_id * filterSize * partitionSize, prunedWeightsSize * sizeof(float));
+    int w_offset = get_lop_weight_offset(l, partition_id, num_partitions);
+    size_t w_size = get_lop_weight_size(l, partition_id, num_partitions);
+    float *pruned_weights = malloc(w_size);
+    memcpy(pruned_weights, l->weights + w_offset, w_size);
 
     free(l->weights);
     l->weights = pruned_weights;
 
-    backup_orig_n(l);
+    int numFilters = get_num_filters(l, partition_id, num_partitions);
+    int data_offset = partition_id * get_partition_size_filters(l, num_partitions);
 
-    int outSize = l->w * l->h * numFilters;
-    l->outputs = outSize;
+    l->outputs = l->w * l->h * numFilters;
     l->out_c = numFilters;
     l->n = numFilters;
-    l->scales += partition_id * partitionSize;
-    l->biases += partition_id * partitionSize;
-    l->rolling_mean += partition_id * partitionSize;
-    l->rolling_variance += partition_id * partitionSize;
+    l->scales += data_offset;
+    l->biases += data_offset;
+    l->rolling_mean += data_offset;
+    l->rolling_variance += data_offset;
 }
 
 static void prune_channels(layer *l, int partition_id, int num_partitions)
 {
-    int partitionSize = l->c / num_partitions;
+    int partitionSize = get_partition_size_channels(l, num_partitions);
+    int numChannels = get_num_channels(l, partition_id, num_partitions);
 
-    int numChannels = partitionSize;
-    if (partition_id == num_partitions - 1)
-    {
-        // In case the division has a remainder, add the missing channels in the last partition.
-        numChannels += l->c % num_partitions;
-    }
-
-    int filterSize = l->size * l->size * l->c;
+    int filterSize = get_filter_size(l);
     int filterSizeReorgPrev = l->size * l->size * partitionSize;
     int filterSizeReorg = l->size * l->size * numChannels;
 
@@ -78,8 +94,6 @@ static void prune_channels(layer *l, int partition_id, int num_partitions)
 
     free(l->weights);
     l->weights = reorg_weights;
-
-    backup_orig_c(l);
 
     l->c = numChannels;
 }
@@ -124,6 +138,8 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
             continue;
         }
 
+        backup_orig_n_c(l);
+
         // Record the first partitioned layer.
         if (para->first_partitioned_layer == 0)
         {
@@ -144,32 +160,51 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
             para->type[i] = LAYER_PART_TYPE_FUSE1;
             para->type[next_i] = LAYER_PART_TYPE_FUSE2;
 
+            backup_orig_n_c(next_l);
+
             prune_channels(next_l, partition_id, num_partitions);
             i++;
         }
     }
 }
 
-/*int get_weight_part_output_offset(layer *l, int partition_id, int num_partitions)
+
+int get_lop_input_offset(layer *l, int partition_id, int num_partitions)
 {
-    int partitionSize = l->n / num_partitions;
-    return partition_id * l->w * l->h * partition_size * sizeof(float);
-}*/
+    return partition_id * l->w * l->h * get_partition_size_channels(l, num_partitions);
+}
+
+size_t get_lop_input_size(layer *l, int partition_id, int num_partitions)
+{
+    return l->w * l->h * get_num_channels(l, partition_id, num_partitions) * sizeof(float);
+}
+
+int get_lop_weight_offset(layer *l, int partition_id, int num_partitions)
+{
+    return partition_id * get_filter_size(l) * get_partition_size_filters(l, num_partitions);
+}
+
+size_t get_lop_weight_size(layer *l, int partition_id, int num_partitions)
+{
+    return get_filter_size(l) * get_num_filters(l, partition_id, num_partitions) * sizeof(float);
+}
+
+int get_lop_output_offset(layer *l, int partition_id, int num_partitions)
+{
+    return partition_id * l->w * l->h * get_partition_size_filters(l, num_partitions);
+}
+
+size_t get_lop_output_size(layer *l, int partition_id, int num_partitions)
+{
+    return l->w * l->h * get_num_filters(l, partition_id, num_partitions) * sizeof(float);
+}
+
 
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions)
 {
-    int orig_num_filters = get_orig_n(l);
-    int partition_size = orig_num_filters / num_partitions;
-    int num_filters = partition_size;
-    if (partition_id == num_partitions - 1)
-    {
-        num_filters += orig_num_filters % num_partitions;
-    }
-
-    int out_offset = partition_id * l->w * l->h * partition_size;
-    int out_size = l->w * l->h * num_filters;
-
-    memcpy(l->output + out_offset, data, out_size * sizeof(float));
+    int out_offset = get_lop_output_offset(l, partition_id, num_partitions);
+    size_t out_size = get_lop_output_size(l, partition_id, num_partitions);
+    memcpy(l->output + out_offset, data, out_size);
 }
 
 void finalize_weight_part_fused_output(layer *l, network *net)

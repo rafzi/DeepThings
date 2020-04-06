@@ -273,16 +273,10 @@ printf("start layer %i at %d\n", i, sys_now() - time_start);
             // See weight_partitioner.c:prune_filters()
             int num_parts = ctxt->total_cli_num;
             blob **task_inputs = malloc(num_parts * sizeof(blob*));
-            for (int c = 0; c < ctxt->total_cli_num; c++){
-               int partitionSize = l->c / num_parts;
-               int numFilters = partitionSize;
-               if (c == num_parts - 1){
-                  numFilters += l->c % num_parts;
-               }
-
-               int inputChannelSize = l->w * l->h;
-               int inputPartSize = inputChannelSize * numFilters;
-               task_inputs[c] = new_blob_and_copy_data(i, inputPartSize * sizeof(float), net->input + c * inputChannelSize * partitionSize);
+            for (int c = 0; c < num_parts; c++){
+               int input_offset = get_lop_input_offset(l, c, num_parts);
+               size_t input_size = get_lop_input_size(l, c, num_parts);
+               task_inputs[c] = new_blob_and_copy_data(i, input_size, net->input + input_offset);
             }
             blob *dummy = new_blob_and_alloc_data(i, 1);
 
@@ -467,15 +461,7 @@ uint32_t time_start = sys_now();
       // Reassemble data.
       blob *task = new_blob_and_alloc_data(layer_id, l->inputs * sizeof(float));
       int num_parts = ctxt->total_cli_num;
-      for (int c = 0; c < ctxt->total_cli_num; c++){
-         int partitionSize = l->c / ctxt->total_cli_num;
-         int numFilters = partitionSize;
-         if (c == num_parts - 1){
-            numFilters += l->c % num_parts;
-         }
-         int inputChannelSize = l->w * l->h;
-         int inputPartSize = inputChannelSize * numFilters;
-
+      for (int c = 0; c < num_parts; c++){
          uint8_t *data_to_copy;
          if (can_reuse && c == ctxt->this_cli_id){
             layer *prev_l = &model->net->layers[layer_id - 1];
@@ -484,7 +470,9 @@ uint32_t time_start = sys_now();
             data_to_copy = tasks[c]->data;
          }
 
-         memcpy(task->data + sizeof(float) * c * inputChannelSize * partitionSize, data_to_copy, inputPartSize * sizeof(float));
+         int input_offset = sizeof(float) * get_lop_input_offset(l, c, num_parts);
+         size_t input_size = get_lop_input_size(l, c, num_parts);
+         memcpy(task->data + input_offset, data_to_copy, input_size);
       }
 
       // Process data.
