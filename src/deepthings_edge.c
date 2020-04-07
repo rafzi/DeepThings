@@ -21,6 +21,19 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
 #endif
    ctxt->model = model;
 
+   enum layer_partition_type *lt = model->weight_part_para.type;
+   lt[16] = LAYER_PART_TYPE_LOP;
+   lt[18] = LAYER_PART_TYPE_FUSE1;
+   lt[19] = LAYER_PART_TYPE_FUSE2;
+   lt[20] = LAYER_PART_TYPE_FUSE1;
+   lt[21] = LAYER_PART_TYPE_FUSE2;
+   lt[22] = LAYER_PART_TYPE_LOP;
+   lt[23] = LAYER_PART_TYPE_FUSE1;
+   lt[24] = LAYER_PART_TYPE_FUSE2;
+   lt[26] = LAYER_PART_TYPE_LIP;
+   lt[29] = LAYER_PART_TYPE_FUSE1;
+   lt[30] = LAYER_PART_TYPE_FUSE2;
+
    load_partitioned_weights(model, edge_id, cli_num);
 
    for (int i = 0; i < model->net->n; i++)
@@ -142,11 +155,14 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
 
    int layer_id = task->id;
    layer *l = &model->net->layers[layer_id];
+   bool is_lip = is_lip_layer(model, layer_id);
+   bool is_fused = is_weight_part_fused_layer(model, layer_id);
 
+   if (!is_lip)
+   {
    forward_convolutional_layer_nnpack(*l, *model->net);
-
-   // If fused, process the next layer.
-   if (is_weight_part_fused_layer(model, layer_id))
+   }
+   if (is_fused)
    {
       model->net->input = l->output;
       if (l->truth)
@@ -155,6 +171,11 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
       }
 
       layer_id++;
+   }
+
+   // If fused, process the next layer.
+   if (is_fused || is_lip)
+   {
       l = &model->net->layers[layer_id];
 
       model->net->index = layer_id;
@@ -281,17 +302,27 @@ printf("start layer %i at %d\n", i, sys_now() - time_start);
             blob *dummy = new_blob_and_alloc_data(i, 1);
 
             // into task queue? no, need id specific
-            for (int target_cli_id = 0; target_cli_id < ctxt->total_cli_num; target_cli_id++){
-               if (target_cli_id == ctxt->this_cli_id){
-                  enqueue(ctxt->task_queue_weightpart[target_cli_id], task_input);
-               } else {
-                  for (int c = 0; c < ctxt->total_cli_num; c++){
-                     if (can_reuse_lop_output(model, i) &&
-                        c == target_cli_id){
-                        // Target cli can reuse data. Just queue a dummy segment.
-                        enqueue(ctxt->task_queue_weightpart[target_cli_id], dummy);
-                     } else {
-                        enqueue(ctxt->task_queue_weightpart[target_cli_id], task_inputs[c]);
+            if (is_lip_layer(model, i))
+            {
+               for (int target_cli_id = 0; target_cli_id < ctxt->total_cli_num; target_cli_id++)
+               {
+                  enqueue(ctxt->task_queue_weightpart[target_cli_id], task_inputs[target_cli_id]);
+               }
+            }
+            else
+            {
+               for (int target_cli_id = 0; target_cli_id < ctxt->total_cli_num; target_cli_id++){
+                  if (target_cli_id == ctxt->this_cli_id){
+                     enqueue(ctxt->task_queue_weightpart[target_cli_id], task_input);
+                  } else {
+                     for (int c = 0; c < ctxt->total_cli_num; c++){
+                        if (can_reuse_lop_output(model, i) &&
+                           c == target_cli_id){
+                           // Target cli can reuse data. Just queue a dummy segment.
+                           enqueue(ctxt->task_queue_weightpart[target_cli_id], dummy);
+                        } else {
+                           enqueue(ctxt->task_queue_weightpart[target_cli_id], task_inputs[c]);
+                        }
                      }
                   }
                }
@@ -330,19 +361,21 @@ printf("results ready: %d\n", sys_now() - time_start);
 
             // Merge outputs.
             int num_partitions = ctxt->total_cli_num;
-            if (is_weight_part_fused_layer(model, i))
+            if (is_weight_part_fused_layer(model, i) || is_lip_layer(model, i))
             {
                // More elaborate merging: add outputs and finalize layer.
 printf("1: %d\n", sys_now() - time_start);
+               if (is_weight_part_fused_layer(model, i))
+               {
                // Advance one layer.
                i++;
+                  //printf("##### processing output of merged layer %d + %d\n", i - 1, i);
+               }
                l = &net->layers[i];
                net->index = i;
                if (l->delta){
                   fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
                }
-
-               //printf("##### processing output of merged layer %d + %d\n", i - 1, i);
 
                // Need to set to zero for fused layers, because results will be added on top.
                memset(l->output, 0, l->outputs * sizeof(float));
@@ -352,9 +385,10 @@ printf("3: %d\n", sys_now() - time_start);
                {
                   blob *result = dequeue(ctxt->results_pool_weightpart);
                   int layer_id = result->id;
-                  if (layer_id != i - 1)
+                  if (layer_id != (is_lip_layer(model, i) ? i : i - 1))
                   {
                      printf("ERROR: got unexpected layer id!\n");
+                     exit(1);
                   }
 
                   //print_part_data(result->data, l->outputs);
@@ -437,49 +471,68 @@ static int total_send = 0;
    {
 uint32_t time_start = sys_now();
 
-      int layer_id = 0;
       blob **tasks = malloc(ctxt->total_cli_num * sizeof(blob*));
-      for (int c = 0; c < ctxt->total_cli_num; c++){
-         tasks[c] = recv_data(conn);
-         total_recv += tasks[c]->size;
-         if (tasks[c]->id == -1){
-            // No more tasks with this client. Close the connection.
-            free_blob(tasks[c]);
-            free(tasks);
-            close_service_connection(conn);
-            *args->done = true;
-            return;
-         }
-         layer_id = tasks[c]->id;
+      tasks[0] = recv_data(conn);
+      total_recv += tasks[0]->size;
+      if (tasks[0]->id == -1)
+      {
+         // No more tasks with this client. Close the connection.
+         free_blob(tasks[0]);
+         free(tasks);
+         close_service_connection(conn);
+         *args->done = true;
+         return;
       }
-
+      int layer_id = tasks[0]->id;
       cnn_model *model = (cnn_model*)ctxt->model;
       layer *l = &model->net->layers[layer_id];
+      blob *task;
 
-      bool can_reuse = can_reuse_lop_output(model, layer_id);
-
-      // Reassemble data.
-      blob *task = new_blob_and_alloc_data(layer_id, l->inputs * sizeof(float));
-      int num_parts = ctxt->total_cli_num;
-      for (int c = 0; c < num_parts; c++){
-         uint8_t *data_to_copy;
-         if (can_reuse && c == ctxt->this_cli_id){
-            layer *prev_l = &model->net->layers[layer_id - 1];
-            data_to_copy = prev_l->output;
-         } else {
-            data_to_copy = tasks[c]->data;
+      if (is_lip_layer(model, layer_id))
+      {
+         task = new_blob_and_alloc_data(layer_id, tasks[0]->size);
+         memcpy(task->data, tasks[0]->data, tasks[0]->size);
+      }
+      else
+      {
+         for (int c = 1; c < ctxt->total_cli_num; c++){
+            tasks[c] = recv_data(conn);
+            total_recv += tasks[c]->size;
+            if (tasks[c]->id != layer_id){
+               printf("Inconsistent task data!\n");
+               exit(1);
+            }
          }
 
-         int input_offset = sizeof(float) * get_lop_input_offset(l, c, num_parts);
-         size_t input_size = get_lop_input_size(l, c, num_parts);
-         memcpy(task->data + input_offset, data_to_copy, input_size);
+         bool can_reuse = can_reuse_lop_output(model, layer_id);
+
+         // Reassemble data.
+         task = new_blob_and_alloc_data(layer_id, l->inputs * sizeof(float));
+         int num_parts = ctxt->total_cli_num;
+         for (int c = 0; c < num_parts; c++){
+            uint8_t *data_to_copy;
+            if (can_reuse && c == ctxt->this_cli_id){
+               layer *prev_l = &model->net->layers[layer_id - 1];
+               data_to_copy = prev_l->output;
+            } else {
+               data_to_copy = tasks[c]->data;
+            }
+
+            int input_offset = sizeof(float) * get_lop_input_offset(l, c, num_parts);
+            size_t input_size = get_lop_input_size(l, c, num_parts);
+            memcpy(task->data + input_offset, data_to_copy, input_size);
+         }
       }
 
       // Process data.
       blob *result = process_task_weightpart(ctxt, task);
       free_blob(task);
-      for (int c = 0; c < ctxt->total_cli_num; c++){
-         free_blob(tasks[c]);
+      free_blob(tasks[0]);
+      if (!is_lip_layer(model, layer_id))
+      {
+         for (int c = 1; c < ctxt->total_cli_num; c++){
+            free_blob(tasks[c]);
+         }
       }
       free(tasks);
       /*enqueue(ctxt->result_queue_weightpart, result);
@@ -509,7 +562,7 @@ void steal_partition_and_perform_inference_thread(void *arg){
    bool thread_done = false;
    sys_thread_t t;
 
-   steal_weightpart_args args;
+   steal_weightpart_args args = {0};
    args.ctxt = ctxt;
    args.done = &thread_done;
 
@@ -759,7 +812,6 @@ int on_weight_part_push(void *svc_conn, void *arg){
    int32_t cli_id = get_client_id(ip_addr, ctxt);
 
 static int total_send = 0;
-   for (int c = 0; c < ctxt->total_cli_num; c++){
       blob *task = dequeue(ctxt->task_queue_weightpart[cli_id]);
       if (task->id == -1)
       {
@@ -769,8 +821,21 @@ static int total_send = 0;
          return 1;
       }
       total_send += task->size;
-
+   send_data(task, conn);
+   int layer_id = task->id;
+   if (!is_lip_layer(ctxt->model, layer_id))
+   {
+      for (int c = 1; c < ctxt->total_cli_num; c++)
+      {
+         task = dequeue(ctxt->task_queue_weightpart[cli_id]);
+         if (task->id != layer_id)
+         {
+            printf("Inconsistent task layer ids\n");
+            exit(1);
+         }
+         total_send += task->size;
       send_data(task, conn);
+   }
    }
 printf("total send: %d kB\n", total_send / 1000);
 

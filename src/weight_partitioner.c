@@ -103,6 +103,11 @@ bool is_weight_part_fused_layer(cnn_model *model, int layer_id)
     return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_FUSE1;
 }
 
+bool is_lip_layer(cnn_model *model, int layer_id)
+{
+    return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_LIP;
+}
+
 bool can_reuse_lop_output(cnn_model *model, int layer_id)
 {
     return model->weight_part_para.type[layer_id - 1] == LAYER_PART_TYPE_LOP &&
@@ -123,47 +128,55 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
     network *net = model->net;
     weight_partitioning_parameters *para = &model->weight_part_para;
 
-    para->first_partitioned_layer = 0;
-
     // TODO: for now this simply gives each client a weight partition.
     int partition_id = cli_id % num_partitions;
 
-    // Go through the remaining layers after FTP.
-    for (int i = model->ftp_para->fused_layers; i < net->n; i++)
+    for (int i = 0; i < net->n; i++)
     {
         layer *l = &net->layers[i];
-
-        if (l->type != CONVOLUTIONAL)
+        if (para->type[i] == LAYER_PART_TYPE_NONE)
         {
             continue;
         }
 
-        backup_orig_n_c(l);
-
-        // Record the first partitioned layer.
-        if (para->first_partitioned_layer == 0)
+        if (i < model->ftp_para->fused_layers)
         {
-            para->first_partitioned_layer = i;
+            printf("Invalid layer type: Partitioned must be after FTP\n");
+            exit(1);
+        }
+        if (l->type != CONVOLUTIONAL)
+        {
+            printf("Invalid layer type: Partitioned must be convolutional\n");
+            exit(1);
         }
 
-        para->type[i] = LAYER_PART_TYPE_LOP;
+        backup_orig_n_c(l);
 
-        prune_filters(l, partition_id, num_partitions);
-
-        // continue; /// SKIP FUSING
-
-        int next_i = i + 1;
-        layer *next_l = &net->layers[next_i];
-        if (next_i < net->n && next_l->type == CONVOLUTIONAL)
+        switch (para->type[i])
         {
-            // We can fuse layers.
-            para->type[i] = LAYER_PART_TYPE_FUSE1;
-            para->type[next_i] = LAYER_PART_TYPE_FUSE2;
-
-            backup_orig_n_c(next_l);
-
-            prune_channels(next_l, partition_id, num_partitions);
-            i++;
+        case LAYER_PART_TYPE_FUSE1:
+            if (i + 1 >= net->n || para->type[i+1] != LAYER_PART_TYPE_FUSE2)
+            {
+                printf("Invalid layer type: F1 must be followed by F2\n");
+                exit(1);
+            }
+            // fallthrough
+        case LAYER_PART_TYPE_LOP:
+            prune_filters(l, partition_id, num_partitions);
+            break;
+        case LAYER_PART_TYPE_FUSE2:
+            if (i - 1 < 0 || para->type[i-1] != LAYER_PART_TYPE_FUSE1)
+            {
+                printf("Invalid layer type: F2 must be preceded by F1\n");
+                exit(1);
+            }
+            // fallthrough
+        case LAYER_PART_TYPE_LIP:
+            prune_channels(l, partition_id, num_partitions);
+            break;
+        default:
+            printf("Invalid layer type: Convolutional must be partitioned\n");
+            exit(1);
         }
     }
 }
@@ -194,16 +207,11 @@ int get_lop_output_offset(layer *l, int partition_id, int num_partitions)
     return partition_id * l->w * l->h * get_partition_size_filters(l, num_partitions);
 }
 
-size_t get_lop_output_size(layer *l, int partition_id, int num_partitions)
-{
-    return l->w * l->h * get_num_filters(l, partition_id, num_partitions) * sizeof(float);
-}
-
 
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions)
 {
     int out_offset = get_lop_output_offset(l, partition_id, num_partitions);
-    size_t out_size = get_lop_output_size(l, partition_id, num_partitions);
+    size_t out_size = l->outputs * sizeof(float);
     memcpy(l->output + out_offset, data, out_size);
 }
 

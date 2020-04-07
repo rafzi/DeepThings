@@ -23,13 +23,12 @@ enum layer_partition_type
 
 typedef struct
 {
-    int first_partitioned_layer;
     enum layer_partition_type *type;
-    int num_fused_layers;
 } weight_partitioning_parameters;
 
 
 bool is_weight_part_fused_layer(cnn_model *model, int layer_id);
+bool is_lip_layer(cnn_model *model, int layer_id);
 bool can_reuse_lop_output(cnn_model *model, int layer_id);
 
 void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitions);
@@ -39,7 +38,6 @@ size_t get_lop_input_size(layer *l, int partition_id, int num_partitions);
 int get_lop_weight_offset(layer *l, int partition_id, int num_partitions);
 size_t get_lop_weight_size(layer *l, int partition_id, int num_partitions);
 int get_lop_output_offset(layer *l, int partition_id, int num_partitions);
-size_t get_lop_output_size(layer *l, int partition_id, int num_partitions);
 
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions);
 void finalize_weight_part_fused_output(layer *l, network *net);
