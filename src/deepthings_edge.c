@@ -23,6 +23,20 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    ctxt->model = model;
 
    enum layer_partition_type *lt = model->weight_part_para.type;
+#ifdef SKIP_FUSING
+#pragma message("FUSION WILL BE SKIPPED")
+   lt[16] = LAYER_PART_TYPE_LOP;
+   lt[18] = LAYER_PART_TYPE_LOP;
+   lt[19] = LAYER_PART_TYPE_LOP;
+   lt[20] = LAYER_PART_TYPE_LOP;
+   lt[21] = LAYER_PART_TYPE_LOP;
+   lt[22] = LAYER_PART_TYPE_LOP;
+   lt[23] = LAYER_PART_TYPE_LOP;
+   lt[24] = LAYER_PART_TYPE_LOP;
+   lt[26] = LAYER_PART_TYPE_LOP;
+   lt[29] = LAYER_PART_TYPE_LOP;
+   lt[30] = LAYER_PART_TYPE_LOP;
+#else
    lt[16] = LAYER_PART_TYPE_LOP;
    lt[18] = LAYER_PART_TYPE_FUSE1;
    lt[19] = LAYER_PART_TYPE_FUSE2;
@@ -34,6 +48,7 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    lt[26] = LAYER_PART_TYPE_LIP;
    lt[29] = LAYER_PART_TYPE_FUSE1;
    lt[30] = LAYER_PART_TYPE_FUSE2;
+#endif
 
    load_partitioned_weights(model, edge_id, cli_num);
 
@@ -457,7 +472,7 @@ printf("5: %d\n", sys_now() - time_start);
 	"skip"
 #else
 	"no-skip"
-#endif 
+#endif
 		   );
    fclose(out_file);
 }
