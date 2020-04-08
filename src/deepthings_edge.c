@@ -464,10 +464,27 @@ printf("5: %d\n", sys_now() - time_start);
    uint32_t run_time = sys_now() - time_start;
    printf("Finished in %d ms\n", run_time);
 
-   FILE *out_file;
+   FILE *procStatus = fopen("/proc/self/status", "r");
+   int maxVirtMem = 0, maxRealMem = 0;
+   char *buf = NULL;
+   size_t sz = 0;
+   while (getline(&buf, &sz, procStatus) >= 0)
+   {
+      if (strncmp(buf, "VmPeak", 6) == 0)
+      {
+         sscanf(buf, "VmPeak: %d", &maxVirtMem);
+      }
+      else
+      {
+         sscanf(buf, "VmHWM: %d", &maxRealMem);
+      }
+   }
+   free(buf);
+   fclose(procStatus);
 
+   FILE *out_file;
    out_file = fopen("result_times.txt", "a");
-   fprintf(out_file, "%d %d %s\n", run_time, MAX_EDGE_NUM,
+   fprintf(out_file, "%d %d %d %d %s\n", run_time, MAX_EDGE_NUM, maxVirtMem, maxRealMem,
 #ifdef SKIP_FUSING
 	"skip"
 #else
