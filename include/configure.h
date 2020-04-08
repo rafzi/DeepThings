@@ -30,6 +30,7 @@
   "192.168.0.6", \
   "192.168.0.7", \
   "192.168.0.8"}
+#ifndef MAX_EDGE_NUM
 #define MAX_EDGE_NUM 6
 #pragma message "Using default edge dev count of 6"
 #else

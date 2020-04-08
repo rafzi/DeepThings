@@ -14,7 +14,9 @@ DISTRIOTLIB=libdistriot.a
 CC=gcc
 LDFLAGS= -lm -pthread
 CFLAGS=-Wall -fPIC 
+ifdef MAX_EDGE_NUM
 CFLAGS+=-DMAX_EDGE_NUM=$(MAX_EDGE_NUM) 
+endif
 ifeq ($(SKIP_FUSING), 1)
 CFLAGS+=-DSKIP_FUSING
 endif
