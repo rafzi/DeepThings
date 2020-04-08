@@ -211,7 +211,7 @@ int get_lop_output_offset(layer *l, int partition_id, int num_partitions)
 void copy_weight_part_output(layer *l, float *data, int partition_id, int num_partitions)
 {
     int out_offset = get_lop_output_offset(l, partition_id, num_partitions);
-    size_t out_size = l->outputs * sizeof(float);
+    size_t out_size = l->w * l->h * get_num_filters(l, partition_id, num_partitions) * sizeof(float);
     memcpy(l->output + out_offset, data, out_size);
 }
 
