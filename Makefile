@@ -13,7 +13,11 @@ DISTRIOTLIB=libdistriot.a
 
 CC=gcc
 LDFLAGS= -lm -pthread
-CFLAGS=-Wall -fPIC
+CFLAGS=-Wall -fPIC 
+CFLAGS+=-DMAX_EDGE_NUM=$(MAX_EDGE_NUM) 
+ifeq ($(SKIP_FUSING), 1)
+CFLAGS+=-DSKIP_FUSING
+endif
 COMMON=-I$(DISTRIOT)/include/ -I$(DISTRIOT)/src/ -I$(DARKNET)/include/ -I$(DARKNET)/src/ -Iinclude/ -Isrc/
 LDLIB=-L$(DISTRIOT) -l:$(DISTRIOTLIB) -L$(DARKNET) -l:$(DARKNETLIB)
 
