@@ -13,6 +13,14 @@ static uint32_t acc_frames[MAX_EDGE_NUM];
 static double commu_size;
 #endif
 
+static void set_lt(enum layer_partition_type *p, int i, enum layer_partition_type type, int fused_layers)
+{
+   if (i >= fused_layers)
+   {
+      p[i] = type;
+   }
+}
+
 device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers, char* network, char* weights, uint32_t edge_id, uint32_t cli_num, const char** edge_addr_list){
    device_ctxt* ctxt = init_client(edge_id, FRAME_NUM);
    cnn_model* model = load_cnn_model(network, weights);
@@ -25,29 +33,26 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    enum layer_partition_type *lt = model->weight_part_para.type;
 #ifdef SKIP_FUSING
 #pragma message("FUSION WILL BE SKIPPED")
-   lt[16] = LAYER_PART_TYPE_LOP;
-   lt[18] = LAYER_PART_TYPE_LOP;
-   lt[19] = LAYER_PART_TYPE_LOP;
-   lt[20] = LAYER_PART_TYPE_LOP;
-   lt[21] = LAYER_PART_TYPE_LOP;
-   lt[22] = LAYER_PART_TYPE_LOP;
-   lt[23] = LAYER_PART_TYPE_LOP;
-   lt[24] = LAYER_PART_TYPE_LOP;
-   lt[26] = LAYER_PART_TYPE_LOP;
-   lt[29] = LAYER_PART_TYPE_LOP;
-   lt[30] = LAYER_PART_TYPE_LOP;
+   for (int i = 0; i < model->net->n; i++)
+   {
+      layer *l = &model->net->layers[i];
+      if (l->type == CONVOLUTIONAL && i >= fused_layers)
+      {
+         lt[i] = LAYER_PART_TYPE_LOP;
+      }
+   }
 #else
-   lt[16] = LAYER_PART_TYPE_LOP;
-   lt[18] = LAYER_PART_TYPE_FUSE1;
-   lt[19] = LAYER_PART_TYPE_FUSE2;
-   lt[20] = LAYER_PART_TYPE_FUSE1;
-   lt[21] = LAYER_PART_TYPE_FUSE2;
-   lt[22] = LAYER_PART_TYPE_LOP;
-   lt[23] = LAYER_PART_TYPE_FUSE1;
-   lt[24] = LAYER_PART_TYPE_FUSE2;
-   lt[26] = LAYER_PART_TYPE_LIP;
-   lt[29] = LAYER_PART_TYPE_FUSE1;
-   lt[30] = LAYER_PART_TYPE_FUSE2;
+   set_lt(lt, 16, LAYER_PART_TYPE_LOP, fused_layers);
+   set_lt(lt, 18, LAYER_PART_TYPE_FUSE1, fused_layers);
+   set_lt(lt, 19, LAYER_PART_TYPE_FUSE2, fused_layers);
+   set_lt(lt, 20, LAYER_PART_TYPE_FUSE1, fused_layers);
+   set_lt(lt, 21, LAYER_PART_TYPE_FUSE2, fused_layers);
+   set_lt(lt, 22, LAYER_PART_TYPE_LOP, fused_layers);
+   set_lt(lt, 23, LAYER_PART_TYPE_FUSE1, fused_layers);
+   set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
+   set_lt(lt, 26, LAYER_PART_TYPE_LIP, fused_layers);
+   set_lt(lt, 29, LAYER_PART_TYPE_FUSE1, fused_layers);
+   set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);
 #endif
 
    load_partitioned_weights(model, edge_id, cli_num);
@@ -221,7 +226,7 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
 void partition_frame_and_perform_inference_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
    cnn_model* model = (cnn_model*)(ctxt->model);
-   blob* temp;
+   blob* temp = NULL;
    uint32_t frame_num;
    bool* reuse_data_is_required;
 
@@ -238,57 +243,67 @@ void partition_frame_and_perform_inference_thread(void *arg){
       partition_and_enqueue(ctxt, frame_num);
       register_client(ctxt);
 
-      /*Dequeue and process task*/
-      while(1){
-         temp = try_dequeue(ctxt->task_queue);
-         if(temp == NULL) break;
-         bool data_ready = false;
+      image_holder img;
+      int32_t cli_id;
+      int32_t frame_seq;
+
+      if (model->ftp_para->fused_layers == 0) {
+         img = load_image_as_model_input(model, frame_num);
+         cli_id = own_cli_id;
+         frame_seq = frame_num;
+      } else {
+         /*Dequeue and process task*/
+         while(1){
+            temp = try_dequeue(ctxt->task_queue);
+            if(temp == NULL) break;
+            bool data_ready = false;
 #if DEBUG_DEEP_EDGE
-         printf("====================Processing task id is %d, data source is %d, frame_seq is %d====================\n", get_blob_task_id(temp), get_blob_cli_id(temp), get_blob_frame_seq(temp));
+            printf("====================Processing task id is %d, data source is %d, frame_seq is %d====================\n", get_blob_task_id(temp), get_blob_cli_id(temp), get_blob_frame_seq(temp));
 #endif/*DEBUG_DEEP_EDGE*/
 #if DATA_REUSE
-         data_ready = is_reuse_ready(model->ftp_para_reuse, get_blob_task_id(temp));
-         if((model->ftp_para_reuse->schedule[get_blob_task_id(temp)] == 1) && data_ready) {
-            blob* shrinked_temp = new_blob_and_copy_data(get_blob_task_id(temp),
-                       (model->ftp_para_reuse->shrinked_input_size[get_blob_task_id(temp)]),
-                       (uint8_t*)(model->ftp_para_reuse->shrinked_input[get_blob_task_id(temp)]));
-            copy_blob_meta(shrinked_temp, temp);
-            free_blob(temp);
-            temp = shrinked_temp;
+            data_ready = is_reuse_ready(model->ftp_para_reuse, get_blob_task_id(temp));
+            if((model->ftp_para_reuse->schedule[get_blob_task_id(temp)] == 1) && data_ready) {
+               blob* shrinked_temp = new_blob_and_copy_data(get_blob_task_id(temp),
+                        (model->ftp_para_reuse->shrinked_input_size[get_blob_task_id(temp)]),
+                        (uint8_t*)(model->ftp_para_reuse->shrinked_input[get_blob_task_id(temp)]));
+               copy_blob_meta(shrinked_temp, temp);
+               free_blob(temp);
+               temp = shrinked_temp;
 
 
-            reuse_data_is_required = check_missing_coverage(model, get_blob_task_id(temp), get_blob_frame_seq(temp));
+               reuse_data_is_required = check_missing_coverage(model, get_blob_task_id(temp), get_blob_frame_seq(temp));
 #if DEBUG_DEEP_EDGE
-            printf("Request data from gateway, is there anything missing locally? ...\n");
-            print_reuse_data_is_required(reuse_data_is_required);
+               printf("Request data from gateway, is there anything missing locally? ...\n");
+               print_reuse_data_is_required(reuse_data_is_required);
 #endif/*DEBUG_DEEP_EDGE*/
-            request_reuse_data(ctxt, temp, reuse_data_is_required);
-            free(reuse_data_is_required);
-         }
+               request_reuse_data(ctxt, temp, reuse_data_is_required);
+               free(reuse_data_is_required);
+            }
 #if DEBUG_DEEP_EDGE
-         if((model->ftp_para_reuse->schedule[get_blob_task_id(temp)] == 1) && (!data_ready))
-            printf("The reuse data is not ready yet!\n");
+            if((model->ftp_para_reuse->schedule[get_blob_task_id(temp)] == 1) && (!data_ready))
+               printf("The reuse data is not ready yet!\n");
 #endif/*DEBUG_DEEP_EDGE*/
 
 #endif/*DATA_REUSE*/
-         process_task(ctxt, temp, data_ready);
-         free_blob(temp);
+            process_task(ctxt, temp, data_ready);
+            free_blob(temp);
 #if DEBUG_COMMU_SIZE
-         printf("======Communication size at edge is: %f======\n", ((double)commu_size)/(1024.0*1024.0*FRAME_NUM));
+            printf("======Communication size at edge is: %f======\n", ((double)commu_size)/(1024.0*1024.0*FRAME_NUM));
 #endif
+         }
+
+
+         // Now wait for stealers to return their results.
+         temp = dequeue_and_merge(ctxt);
+         cli_id = get_blob_cli_id(temp);
+         frame_seq = get_blob_frame_seq(temp);
+   #if DEBUG_FLAG
+         printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
+   #endif
+         float* fused_output = (float*)(temp->data);
+         img = load_image_as_model_input(model, get_blob_frame_seq(temp));
+         set_model_input(model, fused_output);
       }
-
-
-      // Now wait for stealers to return their results.
-      temp = dequeue_and_merge(ctxt);
-      int32_t cli_id = get_blob_cli_id(temp);
-      int32_t frame_seq = get_blob_frame_seq(temp);
-#if DEBUG_FLAG
-      printf("Client %d, frame sequence number %d, all partitions are merged in deepthings_merge_result_thread\n", cli_id, frame_seq);
-#endif
-      float* fused_output = (float*)(temp->data);
-      image_holder img = load_image_as_model_input(model, get_blob_frame_seq(temp));
-      set_model_input(model, fused_output);
 
       network *net = model->net;
       for (int i = model->ftp_para->fused_layers; i < net->n; i++){
@@ -450,10 +465,12 @@ printf("5: %d\n", sys_now() - time_start);
       }
 
       //forward_all(model, model->ftp_para->fused_layers);
-      printf("saving frame: %d\n", get_blob_frame_seq(temp));
-      draw_object_boxes(model, get_blob_frame_seq(temp));
+      printf("saving frame: %d\n", frame_seq);
+      draw_object_boxes(model, frame_seq);
       free_image_holder(model, img);
-      free_blob(temp);
+      if (temp) {
+         free_blob(temp);
+      }
 #if DEBUG_FLAG
       printf("Client %d, frame sequence number %d, finish processing\n", cli_id, frame_seq);
 #endif

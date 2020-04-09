@@ -123,8 +123,6 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
     // That function and its parents would have to be extended by
     // additional args to figure out the network configuration.
 
-    assert(model->ftp_para->fused_layers != 0);
-
     network *net = model->net;
     weight_partitioning_parameters *para = &model->weight_part_para;
 
