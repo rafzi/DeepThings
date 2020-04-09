@@ -240,7 +240,6 @@ void partition_frame_and_perform_inference_thread(void *arg){
 
       /*Load image and partition, fill task queues*/
       load_image_as_model_input(model, frame_num);
-      partition_and_enqueue(ctxt, frame_num);
       register_client(ctxt);
 
       int first_conv_layer = model->net_para->first_conv_layer;
@@ -256,11 +255,13 @@ void partition_frame_and_perform_inference_thread(void *arg){
       int32_t cli_id;
       int32_t frame_seq;
 
-      if (model->ftp_para->fused_layers == first_conv_layer) {
+      if (model->ftp_para->fused_layers <= first_conv_layer) {
          img = load_image_as_model_input(model, frame_num);
          cli_id = own_cli_id;
          frame_seq = frame_num;
       } else {
+         partition_and_enqueue(ctxt, frame_num);
+
          /*Dequeue and process task*/
          while(1){
             temp = try_dequeue(ctxt->task_queue);
@@ -315,7 +316,8 @@ void partition_frame_and_perform_inference_thread(void *arg){
       }
 
       network *net = model->net;
-      for (int i = model->ftp_para->fused_layers; i < net->n; i++){
+      int opfd_start = model->ftp_para->fused_layers > first_conv_layer ? model->ftp_para->fused_layers : first_conv_layer;
+      for (int i = opfd_start; i < net->n; i++){
          //printf("===weight part: layer %d/%d\n", i, net->n - 1);
 printf("start layer %i at %d\n", i, sys_now() - time_start);
          layer *l = &net->layers[i];
@@ -483,6 +485,15 @@ printf("5: %d\n", sys_now() - time_start);
 #if DEBUG_FLAG
       printf("Client %d, frame sequence number %d, finish processing\n", cli_id, frame_seq);
 #endif
+
+      if (net->layers[net->n - 1].type == SOFTMAX) {
+         int predictions[5];
+         top_predictions(net, 5, predictions);
+         printf("top predictions:\n");
+         for (int i = 0; i < 5; i++) {
+            printf("  %i\n", predictions[i]);
+         }
+      }
 
       /*Unregister and prepare for next image*/
       cancel_client(ctxt);
