@@ -29,6 +29,7 @@ typedef struct def_network_para{
    uint32_t *stride;
    uint32_t *filter;
    uint32_t *type;
+   int first_conv_layer;
    tile_region *input_maps;
    tile_region *output_maps;
 } network_parameters;

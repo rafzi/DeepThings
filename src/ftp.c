@@ -62,6 +62,8 @@ static tile_region traversal(network_parameters* net_para, tile_region output, u
       input.w2 = output.w2*stride + stride -1;
       input.h1 = output.h1*stride;
       input.h2 = output.h2*stride + stride -1;
+   }else{
+      abort();
    }
    input.w = input.w2 -input.w1 + 1;
    input.h = input.h2 -input.h1 + 1;
@@ -86,10 +88,10 @@ ftp_parameters* preform_ftp(uint32_t N, uint32_t M, uint32_t fused_layers, netwo
    grid(net_para, ftp_para, M, N);
    for(i = 0; i < ftp_para->partitions_h; i++){
       for(j = 0; j < ftp_para->partitions_w; j++){
-         for(l = fused_layers-1; l >= 0; l--){
+         for(l = fused_layers-1; l >= net_para->first_conv_layer; l--){
             ftp_para->input_tiles[ftp_para->task_id[i][j]][l] =
                        traversal(net_para, ftp_para->output_tiles[ftp_para->task_id[i][j]][l], l);
-            if(l>0) ftp_para->output_tiles[ftp_para->task_id[i][j]][l-1]
+            if(l>net_para->first_conv_layer) ftp_para->output_tiles[ftp_para->task_id[i][j]][l-1]
                      = ftp_para->input_tiles[ftp_para->task_id[i][j]][l];
          }
       }
@@ -236,7 +238,7 @@ void calculate_reuse_data_size(ftp_parameters_reuse* ftp_para_reuse, network_par
    ftp_para_reuse->adjacent_reuse_data_size[task_id]=0;
    ftp_para_reuse->self_reuse_data_size[task_id]=0;
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          uint32_t mirror_position = (position + 2)%4;
@@ -247,7 +249,7 @@ void calculate_reuse_data_size(ftp_parameters_reuse* ftp_para_reuse, network_par
       }
    }
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          regions_and_data = ftp_para_reuse->output_reuse_regions[task_id][l];
@@ -290,7 +292,7 @@ ftp_parameters_reuse* preform_ftp_reuse(network_parameters* net_para, ftp_parame
    for(i = 0; i < ftp_para_reuse->partitions_h; i++){
       for(j = 0; j < ftp_para_reuse->partitions_w; j++){
          task = ftp_para_reuse->task_id[i][j];
-         for(l = ftp_para_reuse->fused_layers-1; l >= 0; l--){
+         for(l = ftp_para_reuse->fused_layers-1; l >= net_para->first_conv_layer; l--){
             if(ftp_para_reuse->schedule[task] == 0){
                /*If there is no dependency, just copy from normal ftp parameters*/
                ftp_para_reuse->input_tiles[task][l] = ftp_para->input_tiles[task][l];
@@ -304,7 +306,7 @@ ftp_parameters_reuse* preform_ftp_reuse(network_parameters* net_para, ftp_parame
    for(i = 0; i < ftp_para_reuse->partitions_h; i++){
       for(j = 0; j < ftp_para_reuse->partitions_w; j++){
          task = ftp_para_reuse->task_id[i][j];
-         for(l = ftp_para_reuse->fused_layers-1; l >= 0; l--){
+         for(l = ftp_para_reuse->fused_layers-1; l >= net_para->first_conv_layer; l--){
             ftp_para_reuse->output_reuse_regions[task][l].down_size = 0;
             ftp_para_reuse->output_reuse_regions[task][l].right_size = 0;
             ftp_para_reuse->output_reuse_regions[task][l].up_size = 0;
@@ -325,12 +327,12 @@ ftp_parameters_reuse* preform_ftp_reuse(network_parameters* net_para, ftp_parame
 #if DEBUG_FTP
          printf("------------------(%3d,%3d)----------------\n", i, j);
 #endif
-         for(l = ftp_para_reuse->fused_layers-1; l >= 0; l--){
+         for(l = ftp_para_reuse->fused_layers-1; l >= net_para->first_conv_layer; l--){
             task = ftp_para_reuse->task_id[i][j];
             if(ftp_para_reuse->schedule[task] == 1){
                ftp_para_reuse->input_tiles[ftp_para_reuse->task_id[i][j]][l] =
                        traversal(net_para, ftp_para_reuse->output_tiles[ftp_para_reuse->task_id[i][j]][l], l);
-               if(l>0) ftp_para_reuse->output_tiles[ftp_para_reuse->task_id[i][j]][l-1]
+               if(l>net_para->first_conv_layer) ftp_para_reuse->output_tiles[ftp_para_reuse->task_id[i][j]][l-1]
                          = remove_and_record_overlapped_region_at_output(i, j, l-1,  ftp_para_reuse,
                                                       ftp_para_reuse->input_tiles[ftp_para_reuse->task_id[i][j]][l]);
             }

@@ -243,11 +243,20 @@ void partition_frame_and_perform_inference_thread(void *arg){
       partition_and_enqueue(ctxt, frame_num);
       register_client(ctxt);
 
+      int first_conv_layer = model->net_para->first_conv_layer;
+      // Process any potential preprocessing layers before convs start.
+      for (int i = 0; i < first_conv_layer; i++)
+      {
+         network *net = model->net;
+         layer *l = &net->layers[i];
+         l->forward(*l, *net);
+      }
+
       image_holder img;
       int32_t cli_id;
       int32_t frame_seq;
 
-      if (model->ftp_para->fused_layers == 0) {
+      if (model->ftp_para->fused_layers == first_conv_layer) {
          img = load_image_as_model_input(model, frame_num);
          cli_id = own_cli_id;
          frame_seq = frame_num;
