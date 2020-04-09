@@ -265,7 +265,7 @@ void forward_partition(cnn_model* model, uint32_t task_id, bool is_reuse){
    ftp_parameters* ftp_para = model->ftp_para;
    /*network_parameters* net_para = model->net_para;*/
    uint32_t l;
-   for(l = 0; l < ftp_para->fused_layers; l++){
+   for(l = model->net_para->first_conv_layer; l < ftp_para->fused_layers; l++){
       if (net.layers[l].type == SHORTCUT) {
          continue;
       }
@@ -283,7 +283,7 @@ void forward_partition(cnn_model* model, uint32_t task_id, bool is_reuse){
    float* stitched_next_layer_input = NULL; 
    ftp_parameters_reuse* ftp_para_reuse = model->ftp_para_reuse;
    if((model->ftp_para_reuse->schedule[task_id] == 1)&&is_reuse){
-      for(l = 0; l < ftp_para_reuse->fused_layers; l++){
+      for(l = model->net_para->first_conv_layer; l < ftp_para_reuse->fused_layers; l++){
          net.layers[l].h = ftp_para_reuse->input_tiles[task_id][l].h;
          net.layers[l].out_h = (net.layers[l].h/net.layers[l].stride); 
          net.layers[l].w = ftp_para_reuse->input_tiles[task_id][l].w;
@@ -294,7 +294,7 @@ void forward_partition(cnn_model* model, uint32_t task_id, bool is_reuse){
    }
 #endif
 
-   for(l = 0; l < ftp_para->fused_layers; l++){
+   for(l = model->net_para->first_conv_layer; l < ftp_para->fused_layers; l++){
       net.layers[l].forward(net.layers[l], net);
       if (to_free == 1) {
          free(cropped_output); 
