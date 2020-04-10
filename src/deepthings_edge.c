@@ -78,17 +78,17 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 14, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
-   set_lt(lt, 16, LAYER_PART_TYPE_LOP, fused_layers);
-   set_lt(lt, 18, LAYER_PART_TYPE_FUSE1, fused_layers);
-   set_lt(lt, 19, LAYER_PART_TYPE_FUSE2, fused_layers);
-   set_lt(lt, 20, LAYER_PART_TYPE_FUSE1, fused_layers);
-   set_lt(lt, 21, LAYER_PART_TYPE_FUSE2, fused_layers);
-   set_lt(lt, 22, LAYER_PART_TYPE_LOP, fused_layers);
-   set_lt(lt, 23, LAYER_PART_TYPE_FUSE1, fused_layers);
-   set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
-   set_lt(lt, 26, LAYER_PART_TYPE_LIP, fused_layers);
-   set_lt(lt, 29, LAYER_PART_TYPE_FUSE1, fused_layers);
-   set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 18, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 19, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 20, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 21, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 22, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 23, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 26, LAYER_PART_TYPE_LIP, fused_layers);
+      set_lt(lt, 29, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);
       break;
    default:
       printf("Unknown model! Not applying any OPFD layers\n");

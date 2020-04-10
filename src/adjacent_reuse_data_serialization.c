@@ -104,7 +104,7 @@ blob* adjacent_reuse_data_serialization(device_ctxt* ctxt, uint32_t task_id, uin
    uint32_t l;
    reuse_data = (float*)malloc(ftp_para_reuse->adjacent_reuse_data_size[task_id]);
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          if(reuse_data_is_required[position]==false) continue;
@@ -153,7 +153,7 @@ overlapped_tile_data** adjacent_reuse_data_deserialization(cnn_model* model, uin
       regions_and_data_ptr_array[position] = (overlapped_tile_data*)malloc(sizeof(overlapped_tile_data)*(ftp_para_reuse->fused_layers));
    }
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          if(reuse_data_is_required[position]==false) continue;
@@ -204,7 +204,7 @@ void place_adjacent_deserialized_data(cnn_model* model, uint32_t task_id, overla
    uint32_t position;
    uint32_t l;
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = model->net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          if(reuse_data_is_required[position]==false) continue;
