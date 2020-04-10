@@ -177,6 +177,9 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
             exit(1);
         }
     }
+
+    // Increase mem usage after pruning, so that the max mem value is accurate.
+    malloc(200*1000*1000);
 }
 
 
@@ -229,7 +232,11 @@ void finalize_weight_part_fused_output(layer *l, network *net)
         add_bias(l->output, l->biases, l->batch, l->n, out_h * out_w);
     }
 
+#ifdef NNPACK
     activate_array_thread(l->output, l->n, n, l->activation, net->threadpool);
+#else
+    activate_array(l->output, l->outputs*l->batch, l->activation);
+#endif
     if (l->binary || l->xnor)
         swap_binary(l);
 }

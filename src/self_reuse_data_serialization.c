@@ -14,7 +14,7 @@ blob* self_reuse_data_serialization(device_ctxt* ctxt, uint32_t task_id, uint32_
    uint32_t l;
    reuse_data = (float*)malloc(ftp_para_reuse->self_reuse_data_size[task_id]);
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          regions_and_data = ftp_para_reuse->output_reuse_regions[task_id][l];
@@ -27,7 +27,7 @@ blob* self_reuse_data_serialization(device_ctxt* ctxt, uint32_t task_id, uint32_
             if(position==2) printf("Self above overlapped amount is %d \n",amount_of_element);
             if(position==3) printf("Self left overlapped amount is %d \n",amount_of_element);
 #endif
-            memcpy(reuse_data, get_data(&regions_and_data, position), amount_of_element*sizeof(float) ); 
+            memcpy(reuse_data, get_data(&regions_and_data, position), amount_of_element*sizeof(float) );
             reuse_data = reuse_data + amount_of_element;
             size += amount_of_element;
 
@@ -55,7 +55,7 @@ overlapped_tile_data* self_reuse_data_deserialization(cnn_model* model, uint32_t
 
    overlapped_tile_data* regions_and_data_ptr = (overlapped_tile_data*)malloc(sizeof(overlapped_tile_data)*(ftp_para_reuse->fused_layers));
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          set_size(regions_and_data_ptr+l, position, 0);/*Initialize to zero, as an indicator of future free memory*/
          if(adjacent_id[position]==-1) continue;
@@ -70,7 +70,7 @@ overlapped_tile_data* self_reuse_data_deserialization(cnn_model* model, uint32_t
             if(position==3) printf("Self left overlapped amount is %d \n",amount_of_element);
 #endif
             float* data = (float* )malloc(amount_of_element*sizeof(float));
-            memcpy(data, serial_data, amount_of_element*sizeof(float)); 
+            memcpy(data, serial_data, amount_of_element*sizeof(float));
             serial_data = serial_data + amount_of_element;
             set_size(regions_and_data_ptr+l, position, amount_of_element*sizeof(float));
             set_data(regions_and_data_ptr+l, position, data);
@@ -85,7 +85,7 @@ void free_self_overlapped_tile_data(cnn_model* model,  overlapped_tile_data* til
    ftp_parameters_reuse* ftp_para_reuse = model->ftp_para_reuse;
    uint32_t position;
    uint32_t l;
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = model->net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(get_size(tiles+l, position)>0){
             free(get_data(tiles+l, position));
@@ -104,7 +104,7 @@ void place_self_deserialized_data(cnn_model* model, uint32_t task_id, overlapped
    uint32_t position;
    uint32_t l;
 
-   for(l = 0; l < ftp_para_reuse->fused_layers-1; l ++){
+   for(l = model->net_para->first_conv_layer; l < ftp_para_reuse->fused_layers-1; l ++){
       for(position = 0; position < 4; position++){
          if(adjacent_id[position]==-1) continue;
          regions_and_data = ftp_para_reuse->output_reuse_regions[task_id][l];

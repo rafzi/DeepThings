@@ -24,24 +24,60 @@ static void set_lt(enum layer_partition_type *p, int i, enum layer_partition_typ
 device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers, char* network, char* weights, uint32_t edge_id, uint32_t cli_num, const char** edge_addr_list){
    device_ctxt* ctxt = init_client(edge_id, FRAME_NUM);
    cnn_model* model = load_cnn_model(network, weights);
-   model->ftp_para = preform_ftp(N, M, fused_layers, model->net_para);
-#if DATA_REUSE
-   model->ftp_para_reuse = preform_ftp_reuse(model->net_para, model->ftp_para);
-#endif
-   ctxt->model = model;
 
    enum layer_partition_type *lt = model->weight_part_para.type;
-#ifdef SKIP_FUSING
-#pragma message("FUSION WILL BE SKIPPED")
-   for (int i = 0; i < model->net->n; i++)
-   {
-      layer *l = &model->net->layers[i];
-      if (l->type == CONVOLUTIONAL && i >= fused_layers)
-      {
-         lt[i] = LAYER_PART_TYPE_LOP;
-      }
-   }
-#else
+   switch (model->net->n) {
+   case 14:
+      // AlexNet
+      fused_layers = 2;
+      set_lt(lt, 2, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 4, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 5, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);
+      break;
+   case 25:
+      // VGG-16
+      fused_layers = 7;
+      set_lt(lt, 7, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 8, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 9, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 11, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 12, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 15, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 17, LAYER_PART_TYPE_FUSE2, fused_layers);
+      break;
+   case 27:
+      // GoogleNet Extraction:
+      fused_layers = 4;
+      set_lt(lt, 4, LAYER_PART_TYPE_LIP, fused_layers);
+      set_lt(lt, 5, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 7, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 9, LAYER_PART_TYPE_LIP, fused_layers);
+      set_lt(lt, 10, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 11, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 12, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 14, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 17, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 18, LAYER_PART_TYPE_LOP, fused_layers);
+      set_lt(lt, 20, LAYER_PART_TYPE_LIP, fused_layers);
+      set_lt(lt, 21, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 22, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 23, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
+      break;
+   case 32:
+      // YOLOv2
+      fused_layers = 12;
+      set_lt(lt, 12, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 14, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
    set_lt(lt, 16, LAYER_PART_TYPE_LOP, fused_layers);
    set_lt(lt, 18, LAYER_PART_TYPE_FUSE1, fused_layers);
    set_lt(lt, 19, LAYER_PART_TYPE_FUSE2, fused_layers);
@@ -53,7 +89,28 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    set_lt(lt, 26, LAYER_PART_TYPE_LIP, fused_layers);
    set_lt(lt, 29, LAYER_PART_TYPE_FUSE1, fused_layers);
    set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);
+      break;
+   default:
+      printf("Unknown model! Not applying any OPFD layers\n");
+      break;
+   }
+#ifdef SKIP_FUSING
+#pragma message("FUSION WILL BE SKIPPED")
+   for (int i = 0; i < model->net->n; i++)
+   {
+      layer *l = &model->net->layers[i];
+      if (l->type == CONVOLUTIONAL && i >= fused_layers)
+      {
+         lt[i] = LAYER_PART_TYPE_LOP;
+      }
+   }
 #endif
+
+   model->ftp_para = preform_ftp(N, M, fused_layers, model->net_para);
+#if DATA_REUSE
+   model->ftp_para_reuse = preform_ftp_reuse(model->net_para, model->ftp_para);
+#endif
+   ctxt->model = model;
 
    load_partitioned_weights(model, edge_id, cli_num);
 
@@ -181,7 +238,11 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
 
    if (!is_lip)
    {
+#ifdef NNPACK
    forward_convolutional_layer_nnpack(*l, *model->net);
+#else
+      forward_convolutional_layer(*l, *model->net);
+#endif
    }
    if (is_fused)
    {
@@ -205,6 +266,7 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
          fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
       }
 
+#ifdef NNPACK
       struct nnp_size input_size = { l->w, l->h };
       struct nnp_padding input_padding = { l->pad, l->pad, l->pad, l->pad };
       struct nnp_size kernel_size = { l->size, l->size };
@@ -214,6 +276,31 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
                               l->c, l->n, input_size, input_padding, kernel_size, stride, model->net->input,
                               l->weights, NULL, l->output, NULL, NULL, nnp_activation_identity, NULL,
                               model->net->threadpool, NULL);
+#else
+      fill_cpu(l->outputs*l->batch, 0, l->output, 1);
+
+      if(l->xnor){
+         binarize_weights(l->weights, l->n, l->c/l->groups*l->size*l->size, l->binary_weights);
+         swap_binary(l);
+         binarize_cpu(model->net->input, l->c*l->h*l->w*l->batch, l->binary_input);
+         model->net->input = l->binary_input;
+      }
+
+      int m = l->n/l->groups;
+      int k = l->size*l->size*l->c/l->groups;
+      int n = l->out_w*l->out_h;
+      for(int i = 0; i < l->batch; ++i){
+         for(int j = 0; j < l->groups; ++j){
+               float *a = l->weights + j*l->nweights/l->groups;
+               float *b = model->net->workspace;
+               float *c = l->output + (i*l->groups + j)*n*m;
+
+               im2col_cpu(model->net->input + (i*l->groups + j)*l->c/l->groups*l->h*l->w,
+                  l->c/l->groups, l->h, l->w, l->size, l->stride, l->pad, b);
+               gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+         }
+      }
+#endif
    }
 
    blob *result = new_blob_and_copy_data(0, get_model_byte_size(model, layer_id), (uint8_t*)get_model_output(model, layer_id));
@@ -226,6 +313,7 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
 void partition_frame_and_perform_inference_thread(void *arg){
    device_ctxt* ctxt = (device_ctxt*)arg;
    cnn_model* model = (cnn_model*)(ctxt->model);
+   network *net = model->net;
    blob* temp = NULL;
    uint32_t frame_num;
    bool* reuse_data_is_required;
@@ -239,24 +327,32 @@ void partition_frame_and_perform_inference_thread(void *arg){
       /*recv_img()*/
 
       /*Load image and partition, fill task queues*/
-      load_image_as_model_input(model, frame_num);
+      image_holder img = load_image_as_model_input(model, frame_num);
       register_client(ctxt);
 
       int first_conv_layer = model->net_para->first_conv_layer;
       // Process any potential preprocessing layers before convs start.
       for (int i = 0; i < first_conv_layer; i++)
       {
-         network *net = model->net;
          layer *l = &net->layers[i];
+
+         net->index = i;
+         if (l->delta){
+            fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+         }
+
          l->forward(*l, *net);
+
+         net->input = l->output;
+         if (l->truth){
+            net->truth = l->output;
+         }
       }
 
-      image_holder img;
       int32_t cli_id;
       int32_t frame_seq;
 
       if (model->ftp_para->fused_layers <= first_conv_layer) {
-         img = load_image_as_model_input(model, frame_num);
          cli_id = own_cli_id;
          frame_seq = frame_num;
       } else {
@@ -315,7 +411,6 @@ void partition_frame_and_perform_inference_thread(void *arg){
          set_model_input(model, fused_output);
       }
 
-      network *net = model->net;
       int opfd_start = model->ftp_para->fused_layers > first_conv_layer ? model->ftp_para->fused_layers : first_conv_layer;
       for (int i = opfd_start; i < net->n; i++){
          //printf("===weight part: layer %d/%d\n", i, net->n - 1);

@@ -15,6 +15,29 @@ static double commu_size;
 device_ctxt* deepthings_gateway_init(uint32_t N, uint32_t M, uint32_t fused_layers, char* network, char* weights, uint32_t total_edge_number, const char** addr_list){
    device_ctxt* ctxt = init_gateway(total_edge_number, addr_list);
    cnn_model* model = load_cnn_model(network, weights);
+
+   switch (model->net->n) {
+   case 14:
+      // AlexNet
+      fused_layers = 2;
+      break;
+   case 25:
+      // VGG-16
+      fused_layers = 7;
+      break;
+   case 27:
+      // GoogleNet Extraction:
+      fused_layers = 4;
+      break;
+   case 32:
+      // YOLOv2
+      fused_layers = 12;
+      break;
+   default:
+      printf("Unknown model! Not applying any OPFD layers\n");
+      break;
+   }
+
    model->ftp_para = preform_ftp(N, M, fused_layers, model->net_para);
 #if DATA_REUSE
    model->ftp_para_reuse = preform_ftp_reuse(model->net_para, model->ftp_para);
