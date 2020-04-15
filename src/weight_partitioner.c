@@ -179,7 +179,7 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
     }
 
     // Increase mem usage after pruning, so that the max mem value is accurate.
-    malloc(200*1000*1000);
+    malloc(600*1000*1000);
 }
 
 
