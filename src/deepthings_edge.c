@@ -151,6 +151,27 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       ctxt->task_queue_weightpart[i] = new_queue(MAX_QUEUE_SIZE);
    }
 
+   {
+      FILE *procStatus = fopen("/proc/self/status", "r");
+      int maxVirtMem = 0;
+      char *buf = NULL;
+      size_t sz = 0;
+      while (getline(&buf, &sz, procStatus) >= 0)
+      {
+         if (strncmp(buf, "VmPeak", 6) == 0)
+         {
+            sscanf(buf, "VmPeak: %d", &maxVirtMem);
+         }
+      }
+      free(buf);
+      fclose(procStatus);
+
+      FILE *out_file;
+      out_file = fopen("result_mem.txt", "a");
+      fprintf(out_file, "%d %d\n", MAX_EDGE_NUM, maxVirtMem);
+      fclose(out_file);
+   }
+
    return ctxt;
 }
 
