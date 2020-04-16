@@ -179,7 +179,9 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
     }
 
     // Increase mem usage after pruning, so that the max mem value is accurate.
-    malloc(600*1000*1000);
+    for (int i = 0; i < 600; i++)
+        if (!malloc(1000*1000))
+            printf("failed to alloc testing buffer\n");
 }
 
 
