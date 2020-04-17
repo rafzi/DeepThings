@@ -41,7 +41,7 @@ def getLabel(t):
   else:
     return "UNKNOWN"
 
-def drawNet(ws, zs, ts, filename, layerlabeloffset=0):
+def drawNet(ws, zs, ts, filename, layerlabeloffset=0, scalemult=1.0):
   global d
   if len(ws) != len(zs):
     raise "mismatch"
@@ -57,7 +57,7 @@ def drawNet(ws, zs, ts, filename, layerlabeloffset=0):
   maxz = max(zs)
   e = [mw + mz/2 for mw,mz in zip(ws, zs)]
   maxe = max(e)
-  scale = slotw / maxe * 0.85
+  scale = slotw / maxe * 0.85 * scalemult
 
   ws = [i * scale for i in ws]
   zs = [i * scale for i in zs]
@@ -111,3 +111,34 @@ drawNet([227, 55, 27, 27, 13, 13, 13, 13, 6],
         [3, 96, 96, 256, 256, 384, 384, 256, 256],
         [1, 0, 1, 0, 1, 3, 4, 0],
         "net_alexnet.svg")
+
+###
+
+# YOLOv2 OWP
+drawNet([38,   38,  38,  38,  38,  38,  19,  19,   19,  19,   19,  19,   19,   19,   38,  38, 19,  19,   19,   19],
+        [256, 512, 256, 512, 256, 512, 512, 1024, 512, 1024, 512, 1024, 1024, 1024, 512, 64, 256, 1280, 1024, 425],
+        [3, 4, 3, 4, 1, 0, 3, 4, 3, 4, 1, 3, 4, 0, 2, 0, 0, 3, 4],
+        "owpnet_yolo.svg",
+        13, 1.6)
+
+# AlexNet OWP
+drawNet([27, 27, 13, 13, 13, 13],
+        [96, 256, 256, 384, 384, 256],
+        [1, 0, 1, 3, 4],
+        "owpnet_alexnet.svg",
+        3, 0.65)
+
+# VGG-16 OWP
+drawNet([56, 56, 56, 56, 28, 28, 28, 28, 14, 14, 14, 14],
+        [128, 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512],
+        [1, 3, 4, 0, 1, 3, 4, 0, 1, 3, 4],
+        "owpnet_vgg.svg",
+        8)
+
+# Extraction GoogleNet OWP
+drawNet([28, 28, 28, 28, 28, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 7, 7, 7, 7, 7, 7],
+        [192, 182, 256, 256, 512, 512, 256, 512, 256, 512, 256, 512, 256, 512, 512, 1024, 1024, 512, 1024, 512, 1012, 1000],
+        [2, 3, 4, 1, 0, 2, 3, 4, 3, 4, 3, 4, 3, 4, 1, 0, 2, 3, 4, 3, 4],
+        "owpnet_extract.svg",
+        5, 1.6)
+

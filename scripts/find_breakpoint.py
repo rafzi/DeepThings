@@ -111,7 +111,6 @@ def solve():
       ct1.SetCoefficient(b[l], 1)
       ct1.SetCoefficient(b[l-1], -1)
 
-
   # max(a[l]) + sum(b[l]W[l]/N + (1-b[l])W[l])
   obj = solver.Objective()
   obj.SetMinimization()
@@ -137,15 +136,12 @@ def solve():
   max_a = 0
   w_tail = 0
   for l in range(0, L):
-    a_i = a[l].solution_value()
+    a_i = M[l] + K[l]
     max_a = a_i if a_i > max_a else max_a
-    if b[l].solution_value():
-      w_tail += W[l]/N
-    else:
-      w_tail += W[l]
+    w_tail += W[l]
   print("max_a =", max_a)
   print("w_tail =", w_tail)
-  print("total =", max_a + w_tail)
+  print("total (single device) =", max_a + w_tail)
 
 
 
