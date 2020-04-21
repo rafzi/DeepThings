@@ -22,14 +22,14 @@ def drawLayer(x, w, z):
   lz = z/2
   drawCube(lx, ly, w, w, lz)
 
-def drawNetArrow(x, label):
+def drawNetArrow(x, label, sz):
   global d
   drawArrow(x+15, -15, 25, 5, 8)
-  d.append(svg.Text(label, 12, x+15+25/2, -15-10, center=0.5, fill="black"))
+  d.append(svg.Text(label, sz, x+15+25/2, -15-10, center=0.5, fill="black"))
 
 def getLabel(t):
   if t == 0:
-    return "not CONV"
+    return "NCONV"
   elif t == 1:
     return "LOP"
   elif t == 2:
@@ -41,7 +41,7 @@ def getLabel(t):
   else:
     return "UNKNOWN"
 
-def drawNet(ws, zs, ts, filename, layerlabeloffset=0, scalemult=1.0):
+def drawNet(ws, zs, ts, filename, layerlabeloffset=0, scalemult=1.0, fontsz=14):
   global d
   if len(ws) != len(zs):
     raise "mismatch"
@@ -67,8 +67,8 @@ def drawNet(ws, zs, ts, filename, layerlabeloffset=0, scalemult=1.0):
   for l in range(0, len(ws)):
     drawLayer(l*slotw, ws[l], zs[l])
     if l != len(ws)-1:
-      d.append(svg.Text(str(l+layerlabeloffset), 14, (l+1)*slotw-5, -15+6, center=0.5, fill="black"))
-      drawNetArrow((l+1) * slotw - ARROWW, getLabel(ts[l]))
+      d.append(svg.Text(str(l+layerlabeloffset), fontsz, (l+1)*slotw-5, -15+6, center=0.5, fill="black"))
+      drawNetArrow((l+1) * slotw - ARROWW, getLabel(ts[l]), fontsz)
 
   d.saveSvg(filename)
 
@@ -119,26 +119,26 @@ drawNet([38,   38,  38,  38,  38,  38,  19,  19,   19,  19,   19,  19,   19,   1
         [256, 512, 256, 512, 256, 512, 512, 1024, 512, 1024, 512, 1024, 1024, 1024, 512, 64, 256, 1280, 1024, 425],
         [3, 4, 3, 4, 1, 0, 3, 4, 3, 4, 1, 3, 4, 0, 2, 0, 0, 3, 4],
         "owpnet_yolo.svg",
-        13, 1.6)
+        13, 1.6, fontsz=17)
 
 # AlexNet OWP
 drawNet([27, 27, 13, 13, 13, 13],
         [96, 256, 256, 384, 384, 256],
         [1, 0, 1, 3, 4],
         "owpnet_alexnet.svg",
-        3, 0.65)
+        3, 0.65, fontsz=17)
 
 # VGG-16 OWP
 drawNet([56, 56, 56, 56, 28, 28, 28, 28, 14, 14, 14, 14],
         [128, 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512],
         [1, 3, 4, 0, 1, 3, 4, 0, 1, 3, 4],
         "owpnet_vgg.svg",
-        8)
+        8, fontsz=17)
 
 # Extraction GoogleNet OWP
 drawNet([28, 28, 28, 28, 28, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 7, 7, 7, 7, 7, 7],
         [192, 182, 256, 256, 512, 512, 256, 512, 256, 512, 256, 512, 256, 512, 512, 1024, 1024, 512, 1024, 512, 1012, 1000],
         [2, 3, 4, 1, 0, 2, 3, 4, 3, 4, 3, 4, 3, 4, 1, 0, 2, 3, 4, 3, 4],
         "owpnet_extract.svg",
-        5, 1.6)
+        5, 1.6, fontsz=17)
 

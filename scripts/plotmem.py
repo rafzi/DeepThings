@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # 1: YOLOv2, 2: AlexNet, 3: VGG-16, 4: GoogLeNet
-model = 4
+model = 1
 
 dfs = pd.read_excel("t.xlsx", sheet_name=None, header=None)
 if model == 1:
@@ -21,7 +21,9 @@ print(sh)
 labels = ["1", "2", "3", "4", "5", "6"]
 x = np.arange(len(labels))
 
+plt.rcParams.update({"font.size": 13})
 fig, ax = plt.subplots()
+plt.subplots_adjust(top=0.95, right=0.95)
 
 # Workaround for this: https://bugs.python.org/issue32790
 def fmtFlt(f, digits):
@@ -49,6 +51,7 @@ def addData():
     y.append(-sh[i + 1][model] + sh[1][model])
   y = np.array(y) / 1000
   g = ax.bar(x, y)
+  #g = ax.plot(x, y)
 
   autolabel(g)
 
@@ -59,7 +62,7 @@ addData()
 ybot, ytop = plt.ylim()
 plt.ylim(ybot, ytop*1.05)
 ax.set_xlabel("Number of devices")
-ax.set_ylabel("Memory savings over 1 device [MB]")
+ax.set_ylabel("Memory savings over one device [MB]")
 ax.set_xticks(x)
 ax.set_xticklabels(labels)
 
