@@ -74,7 +74,7 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    case 32:
       // YOLOv2
       fused_layers = 12;
-      set_lt(lt, 12, LAYER_PART_TYPE_FUSE1, fused_layers);
+      /*set_lt(lt, 12, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 14, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
@@ -88,7 +88,29 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 26, LAYER_PART_TYPE_LIP, fused_layers);
       set_lt(lt, 29, LAYER_PART_TYPE_FUSE1, fused_layers);
+      set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);*/
+
+      set_lt(lt, 12, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 14, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 18, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 19, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 20, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 21, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 22, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 23, LAYER_PART_TYPE_SEQ, fused_layers);
+
+      set_lt(lt, 24, LAYER_PART_TYPE_SEQ, fused_layers);
+
+      set_lt(lt, 26, LAYER_PART_TYPE_SEQ, fused_layers);
+
+      set_lt(lt, 29, LAYER_PART_TYPE_SEQ, fused_layers);
       set_lt(lt, 30, LAYER_PART_TYPE_FUSE2, fused_layers);
+
       break;
    default:
       printf("Unknown model! Not applying any OPFD layers\n");
@@ -256,11 +278,12 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
    layer *l = &model->net->layers[layer_id];
    bool is_lip = is_lip_layer(model, layer_id);
    bool is_fused = is_weight_part_fused_layer(model, layer_id);
+   bool is_seq = is_seq_layer(model, layer_id);
 
    if (!is_lip)
    {
 #ifdef NNPACK
-   forward_convolutional_layer_nnpack(*l, *model->net);
+      forward_convolutional_layer_nnpack(*l, *model->net);
 #else
       forward_convolutional_layer(*l, *model->net);
 #endif
@@ -322,6 +345,32 @@ static blob *process_task_weightpart(device_ctxt *ctxt, blob *task){
          }
       }
 #endif
+   }
+
+   if (is_seq) {
+      while (is_weight_part_fused_layer2(model, layer_id+1)) {
+         model->net->input = l->output;
+         if (l->truth)
+         {
+            model->net->truth = l->output;
+         }
+
+         layer_id++;
+         l = &model->net->layers[layer_id];
+         model->net->index = layer_id;
+         if (l->delta) {
+            fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+         }
+         if (l->type == CONVOLUTIONAL) {
+#ifdef NNPACK
+            forward_convolutional_layer_nnpack(*l, *model->net);
+#else
+            forward_convolutional_layer(*l, *model->net);
+#endif
+         } else {
+            l->forward(*l, *model->net);
+         }
+      }
    }
 
    blob *result = new_blob_and_copy_data(0, get_model_byte_size(model, layer_id), (uint8_t*)get_model_output(model, layer_id));
@@ -432,6 +481,7 @@ void partition_frame_and_perform_inference_thread(void *arg){
          set_model_input(model, fused_output);
       }
 
+      int numSeqStarts = 0;
       int opfd_start = model->ftp_para->fused_layers > first_conv_layer ? model->ftp_para->fused_layers : first_conv_layer;
       for (int i = opfd_start; i < net->n; i++){
          //printf("===weight part: layer %d/%d\n", i, net->n - 1);
@@ -466,6 +516,28 @@ printf("start layer %i at %d\n", i, sys_now() - time_start);
                {
                   enqueue(ctxt->task_queue_weightpart[target_cli_id], task_inputs[target_cli_id]);
                }
+            }
+            else if (is_seq_layer(model, i)) {
+               // sequential layer mapping.
+               if (numSeqStarts == 0) {
+                  enqueue(ctxt->task_queue_weightpart[ctxt->this_cli_id], task_input);
+               } else {
+                  // distribute to other clis in order
+                  int target_cli_id = numSeqStarts;
+                  if (target_cli_id <= ctxt->this_cli_id) {
+                     target_cli_id--;
+                  }
+                  enqueue(ctxt->task_queue_weightpart[target_cli_id], task_input);
+               }
+               numSeqStarts++;
+
+               // fill results queue with dummies such that the ready queue will trigger on one result.
+               //blob *ready = new_empty_blob(cli_id);
+               //annotate_blob(ready, cli_id, frame_seq, task_id);
+               for (int d = 0; d < ctxt->total_cli_num - 1; d++) {
+                  enqueue(ctxt->results_pool_weightpart, dummy);
+               }
+               //free_blob(ready);
             }
             else
             {
@@ -525,8 +597,8 @@ printf("results ready: %d\n", sys_now() - time_start);
 printf("1: %d\n", sys_now() - time_start);
                if (is_weight_part_fused_layer(model, i))
                {
-               // Advance one layer.
-               i++;
+                  // Advance one layer.
+                  i++;
                   //printf("##### processing output of merged layer %d + %d\n", i - 1, i);
                }
                l = &net->layers[i];
@@ -562,6 +634,33 @@ printf("4: %d\n", sys_now() - time_start);
 
                finalize_weight_part_fused_output(l, net);
 printf("5: %d\n", sys_now() - time_start);
+            } else if (is_seq_layer(model, i)) {
+               // Take result as is.
+
+               // dequeue dummies.
+               for (int d = 0; d < ctxt->total_cli_num - 1; d++) {
+                  blob *trash = dequeue(ctxt->results_pool_weightpart);
+                  free_blob(trash);
+               }
+
+               blob *result = dequeue(ctxt->results_pool_weightpart);
+               int layer_id = result->id;
+               if (layer_id != i)
+               {
+                  printf("ERROR: got unexpected layer id!\n");
+               }
+
+               // advance inference by number of sequential layers.
+               while (is_weight_part_fused_layer2(model, i+1)) {
+                  i++;
+               }
+               l = &net->layers[i];
+               net->index = i;
+               if (l->delta){
+                  fill_cpu(l->outputs * l->batch, 0, l->delta, 1);
+               }
+
+               memcpy(l->output, result->data, result->size);
             } else {
                // Simple concatenation of outputs.
 
@@ -686,7 +785,7 @@ uint32_t time_start = sys_now();
       layer *l = &model->net->layers[layer_id];
       blob *task;
 
-      if (is_lip_layer(model, layer_id))
+      if (is_lip_layer(model, layer_id) || is_seq_layer(model, layer_id))
       {
          task = new_blob_and_alloc_data(layer_id, tasks[0]->size);
          memcpy(task->data, tasks[0]->data, tasks[0]->size);
@@ -726,7 +825,7 @@ uint32_t time_start = sys_now();
       blob *result = process_task_weightpart(ctxt, task);
       free_blob(task);
       free_blob(tasks[0]);
-      if (!is_lip_layer(model, layer_id))
+      if (!is_lip_layer(model, layer_id) && !is_seq_layer(model, layer_id))
       {
          for (int c = 1; c < ctxt->total_cli_num; c++){
             free_blob(tasks[c]);
@@ -1021,7 +1120,7 @@ static int total_send = 0;
       total_send += task->size;
    send_data(task, conn);
    int layer_id = task->id;
-   if (!is_lip_layer(ctxt->model, layer_id))
+   if (!is_lip_layer(ctxt->model, layer_id) && !is_seq_layer(ctxt->model, layer_id))
    {
       for (int c = 1; c < ctxt->total_cli_num; c++)
       {

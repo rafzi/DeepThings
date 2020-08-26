@@ -103,9 +103,19 @@ bool is_weight_part_fused_layer(cnn_model *model, int layer_id)
     return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_FUSE1;
 }
 
+bool is_weight_part_fused_layer2(cnn_model *model, int layer_id)
+{
+    return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_FUSE2;
+}
+
 bool is_lip_layer(cnn_model *model, int layer_id)
 {
     return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_LIP;
+}
+
+bool is_seq_layer(cnn_model *model, int layer_id)
+{
+    return model->weight_part_para.type[layer_id] == LAYER_PART_TYPE_SEQ;
 }
 
 bool can_reuse_lop_output(cnn_model *model, int layer_id)
@@ -128,6 +138,7 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
 
     // TODO: for now this simply gives each client a weight partition.
     int partition_id = cli_id % num_partitions;
+    int numSeqStarts = 0;
 
     for (int i = 0; i < net->n; i++)
     {
@@ -144,7 +155,11 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
         }
         if (l->type != CONVOLUTIONAL)
         {
-            printf("Invalid layer type: Partitioned must be convolutional\n");
+            if (para->type[i] == LAYER_PART_TYPE_FUSE2) {
+                // ok because of seq.
+                continue;
+            }
+            printf("Invalid layer type at %i: Partitioned must be convolutional\n", i);
             exit(1);
         }
 
@@ -162,7 +177,20 @@ void load_partitioned_weights(cnn_model *model, int32_t cli_id, int num_partitio
         case LAYER_PART_TYPE_LOP:
             prune_filters(l, partition_id, num_partitions);
             break;
+        case LAYER_PART_TYPE_SEQ:
+            if (numSeqStarts != cli_id) {
+                free(l->weights);
+            }
+            numSeqStarts++;
+            break;
         case LAYER_PART_TYPE_FUSE2:
+            if (i - 1 >= 0 && (para->type[i-1] == LAYER_PART_TYPE_SEQ || para->type[i-1] == LAYER_PART_TYPE_FUSE2))
+            {
+                if (numSeqStarts-1 != cli_id) {
+                    free(l->weights);
+                }
+                continue;
+            }
             if (i - 1 < 0 || para->type[i-1] != LAYER_PART_TYPE_FUSE1)
             {
                 printf("Invalid layer type: F2 must be preceded by F1\n");
@@ -257,6 +285,8 @@ const char *get_layer_type_name(enum layer_partition_type type)
         return "FUSE1";
     case LAYER_PART_TYPE_FUSE2:
         return "FUSE2";
+    case LAYER_PART_TYPE_SEQ:
+        return "SEQUENTIAL";
     default:
         return "Unknown";
     }
