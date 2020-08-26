@@ -30,15 +30,19 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
    case 14:
       // AlexNet
       fused_layers = 2;
-      set_lt(lt, 2, LAYER_PART_TYPE_LOP, fused_layers);
+      /*set_lt(lt, 2, LAYER_PART_TYPE_LOP, fused_layers);
       set_lt(lt, 4, LAYER_PART_TYPE_LOP, fused_layers);
       set_lt(lt, 5, LAYER_PART_TYPE_FUSE1, fused_layers);
-      set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);*/
+      set_lt(lt, 2, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 4, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 5, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 6, LAYER_PART_TYPE_SEQ, fused_layers);
       break;
    case 25:
       // VGG-16
       fused_layers = 7;
-      set_lt(lt, 7, LAYER_PART_TYPE_LOP, fused_layers);
+      /*set_lt(lt, 7, LAYER_PART_TYPE_LOP, fused_layers);
       set_lt(lt, 8, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 9, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 11, LAYER_PART_TYPE_LOP, fused_layers);
@@ -46,12 +50,24 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 15, LAYER_PART_TYPE_LOP, fused_layers);
       set_lt(lt, 16, LAYER_PART_TYPE_FUSE1, fused_layers);
-      set_lt(lt, 17, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 17, LAYER_PART_TYPE_FUSE2, fused_layers);*/
+
+      set_lt(lt, 7, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 8, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 9, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 11, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 12, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_SEQ, fused_layers);
+
+      set_lt(lt, 15, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 17, LAYER_PART_TYPE_SEQ, fused_layers);
       break;
    case 27:
       // GoogleNet Extraction:
       fused_layers = 4;
-      set_lt(lt, 4, LAYER_PART_TYPE_LIP, fused_layers);
+      /*set_lt(lt, 4, LAYER_PART_TYPE_LIP, fused_layers);
       set_lt(lt, 5, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 7, LAYER_PART_TYPE_LOP, fused_layers);
@@ -69,7 +85,32 @@ device_ctxt* deepthings_edge_init(uint32_t N, uint32_t M, uint32_t fused_layers,
       set_lt(lt, 21, LAYER_PART_TYPE_FUSE1, fused_layers);
       set_lt(lt, 22, LAYER_PART_TYPE_FUSE2, fused_layers);
       set_lt(lt, 23, LAYER_PART_TYPE_FUSE1, fused_layers);
-      set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 24, LAYER_PART_TYPE_FUSE2, fused_layers);*/
+
+      set_lt(lt, 4, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 5, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 6, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 7, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 9, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 10, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 11, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 12, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 13, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 14, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 15, LAYER_PART_TYPE_FUSE2, fused_layers);
+      set_lt(lt, 16, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 17, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 18, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 20, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 21, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 22, LAYER_PART_TYPE_SEQ, fused_layers);
+      set_lt(lt, 23, LAYER_PART_TYPE_FUSE2, fused_layers);
+
+      set_lt(lt, 24, LAYER_PART_TYPE_SEQ, fused_layers);
       break;
    case 32:
       // YOLOv2
